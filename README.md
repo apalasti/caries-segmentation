@@ -1,6 +1,10 @@
 # caries-segmentation
 
-## Key Models and Performance
+## Quick Start
+### Download the raw dataset with the following script: 
+```bash
+uv run scripts/download.py
+```
 
 
 | Model/System                                                                                 | Imaging Type    | Key Features                                                                                        | Performance Metrics                                                                                                                                                        |
