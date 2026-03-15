@@ -3,12 +3,26 @@ name = "moderate-data-science"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
-    "roboflow>=1.2.16",
+    "numpy>=2.4.3",
+    "opencv-python>=4.13.0.92",
+    "pillow>=12.1.1",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.8.0",
+    "tomli>=2.4.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+    "tqdm>=4.67.3",
+    "wandb>=0.25.1",
 ]
 
 [dependency-groups]
 dev = [
     "gdown>=5.2.1",
+]
+
+[tool.uv.workspace]
+members = [
+    "src/basic-u-net",
 ]
