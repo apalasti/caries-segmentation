@@ -141,6 +141,30 @@ A szegmentáció betanításához a leggyakrabban használt veszteségfüggvény
 Legyen $p_i in [0,1]$ a hálózat által jósolt valószínűség az $i$-edik pixelre, és $g_i in {0,1}$ a valós (ground truth) címke. A Dice veszteség ($cal(L)_"Dice"$) a következőképpen számolható:
 
 $ cal(L)_"Dice" = 1 - (2 sum_(i=1)^N p_i g_i + epsilon) / (sum_(i=1)^N p_i + sum_(i=1)^N g_i + epsilon) $
+
+  === U-Net Architektúra Kiterjesztése és Implementációs Részletek
+
+Jelen kutatásban az eredeti U-Net modellt vettük alapul, amelyet egy mélyebb, *Large U-Net* architektúrára is kiterjesztettünk, hogy a rendelkezésre álló GPU (NVIDIA RTX) memóriáját hatékonyabban használjuk ki, illetve robusztusabb reprezentációt tanulhassunk a röntgenfelvételekből. Az implementáció a Python programozási nyelven, a PyTorch keretrendszer #cite(<paszke2019pytorch>) segítségével készült.
+
+==== Konvolúciós Blokk, Kernel, Padding és Stride
+
+Az architektúra alapköve a duplázott konvolúciós blokk (`DoubleConv`), amely egyaránt alkalmazásra kerül az "encoder" és a "decoder" ágban. Ez a blokk két egymást követő kétdimenziós konvolúciós rétegből (`Conv2d`) áll. A konvolúciós szűrők (kernel) mérete $3 times 3$, amely standard értékként elegendő a lokális térbeli mintázatok és élek felismeréséhez. 
+
+Annak érdekében, hogy a transzformáció során a hálózat feleslegesen ne csökkentse az aktivációs térképek térbeli felbontását (magasságát és szélességét), egységnyi kitöltést (`padding=1`) alkalmaztunk. A lépésköz (`stride`) értéke a konvolúciós blokk belsejében $1$, így a konvolúciós ablak minden egyes pixelre finoman rácsúszik, megőrizve a rácsfelbontást.
+
+A kódoló szakaszban a térbeli redukciót mindig hálózaton kívüli, exkluzív $2 times 2$-es Max Pooling réteg végzi (ahol a lépésköz is 2), ami rendre megfelezi a felépített reprezentációk felbontását. A dekódoló ág feladata ennek ellentéte, a térbeli dimenziók visszaállítása transzponált konvolúciók (`ConvTranspose2d`) segítségével ($2 times 2$-es kernel, $2$-es stride kíséretében).
+
+==== Batch Normalization
+
+Minden konvolúciós műveletet a PyTorch `BatchNorm2d` rétege követi a nem-lineáris aktivációs függvény (ReLU - Rectified Linear Unit) előtt. A Batch Normalizáció #cite(<ioffe2015batch>) megkönnyíti és felgyorsítja a mély neurális hálózatok betanítását azzal, hogy az egyes rétegek bemeneteinek eloszlását fixálja, redukálva az ún. belső kovariancia eltolódás (internal covariate shift) jelenségét.
+
+Matematikailag a normálás a következőképpen történik az adott mini-batch-en belül minden csatornára függetlenül:
+
+$ hat(x)_i = (x_i - mu_"batch") / sqrt(sigma_"batch"^2 + epsilon) $
+$ y_i = gamma hat(x)_i + beta $
+
+ahol $mu_"batch"$ a mini-batch adott térképre vonatkozó empirikus átlaga, $sigma_"batch"^2$ a varianciája, a $gamma$ (skála) és $beta$ (eltolás) pedig a hálózat által tanult paraméterek. Ennek következtében a PyTorch stabilabb gradiensáramlást tud produkálni végig az egész U-Net testen keresztül.
+
   = SOTA MODELLEK
 
   == CariesNet
@@ -155,18 +179,15 @@ A CariSeg négy neurális hálózat integrációján alapul, és 99,42%-os ponto
 
 = MLOps Platform
 
-A projekt során az MLOps (Machine Learning Operations) folyamatok menedzselésére az MLflow #cite(<jena2025mlops>) platformot választottuk. Az MLflow segítségével szisztematikusan követhetjük az egyes tanítási kísérleteket, verziózhatjuk a modelljeinket, és biztosíthatjuk az eredmények reprodukálhatóságát.
+A projekt során az MLOps (Machine Learning Operations) folyamatok menedzselésére a felhőalapú Weights & Biases (W&B) #cite(<wandb>) platformot választottuk. A W&B segítségével szisztematikusan követhetjük az egyes tanítási kísérleteket, verziózhatjuk a modelljeinket, és biztosíthatjuk az eredmények reprodukálhatóságát, mindezt lokális infrastruktúra-karbantartás nélkül.
 
-A rendszert Kubernetes #cite(<poulton2019kubernetes>) környezetben telepítettük egy bérelt szerveren, ami lehetővé teszi a komponensek skálázhatóságát és a hatékony csapatmunkát. Az MLflow használatát három fő modulra alapoztuk:
+A W&B integrációjával a Python kódba (a `wandb` könyvtáron keresztül) a folyamatokat az alábbi három fő pillérre alapoztuk:
 
-1. **MLflow Tracking**: Ezzel naplózzuk az összes kísérletet, beleértve a hiperparamétereket (például tanulási ráta, kötegméret), a kiértékelési metrikákat (Dice-együttható, IoU, Precision, Recall) és a tanítás során generált vizualizációkat (például veszteségfüggvény-görbék). Ez kritikus fontosságú a különböző U-Net variánsok és a baseline modell szisztematikus összehasonlításakor.
+1. **W&B Tracking (Kísérletkövetés)**: Ezzel naplózzuk az összes kísérletet, beleértve a hiperparamétereket (például tanulási ráta, kötegméret), a kiértékelési metrikákat (Dice-együttható, betanítási és validációs veszteség) és a tanítás során generált vizualizációkat. Ez kritikus fontosságú a U-Net és Large U-Net variánsok szisztematikus összehasonlításakor.
 
-2. **MLflow Model Registry**: Itt tároljuk a betanított modellek súlyait és metaadatait. A registry segítségével kezeljük a modellek életciklusát, biztosítva, hogy a tesztelés és az alkalmazás során mindig a legmegfelelőbb modellverziót használjuk.
+2. **W&B Artifacts**: Itt tároljuk a betanított modellek súlyait. Az Artifacts rendszer segítségével könnyedén kezelhetjük a különböző adathalmaz-verziókat és a felhőbe mentett modellsúlyokat (checkpoints), elősegítve a reprodukálhatóságot és az elosztott tesztelést.
 
-3. **MLflow Artifact Store**: A kísérletek során keletkezett fájlokat, például szegmentációs mintákat és modellsúlyokat központilag, távolról is elérhető módon tároljuk.
-
-Az infrastruktúra alapját képező Kubernetes környezet biztosítja az egyes komponensek (például metaadat-adatbázis, tárolóegység és maga az MLflow szerver) stabil futását és egyszerű üzemeltetését.
-
+3. **Erőforrás Monitoring (System Metrics)**: A W&B transzparens módon, valós időben rögzíti a hardver-erőforrások állapotát a betanítás során (GPU memóriahasználat, hőmérséklet, feldolgozóegység teljesítménye), amely elengedhetetlen a dedikált hardver – jelen esetben a helyi NVIDIA RTX GPU – hatékony kihasználásához.
 
 = Eredmények
 
