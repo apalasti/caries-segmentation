@@ -1,6 +1,9 @@
+import io
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from roboflow import Roboflow
 
 import gdown
 import requests
@@ -52,6 +55,14 @@ def main() -> None:
         with zipfile.ZipFile(tmp.name, "r") as zf:
             zf.extractall(OUTPUT_DIR)
 
+    #roboflow dataset
+    rf = Roboflow(api_key="58rqeTg0l5nzy3JWH1Sl")
+    project = rf.workspace("arshs-workspace-radio").project("vzrad2")
+    version = project.version(6)
+    dataset = version.download("yolov5")
+    shutil.move(dataset.location,OUTPUT_DIR)#For some reason version.download 'location' argument did not put data to OUTPUT_DIR
+    print("SDK dataset location:", dataset.location)
+    print(f"Dataset extracted to {OUTPUT_DIR}")
 
 if __name__ == "__main__":
     main()
