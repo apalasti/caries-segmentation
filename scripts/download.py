@@ -1,15 +1,19 @@
-import io
+import os
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from roboflow import Roboflow
 
 import gdown
 import requests
 from tqdm import tqdm
+from roboflow import Roboflow
+from dotenv import load_dotenv
 
 
+load_dotenv()
+
+ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
 DC1000_URL = "https://drive.google.com/uc?id=1Xn1oGHvhGF9GbkcLEtCOV5QvWWqt1y62"
 KAGGLE_DENTAL_URL = "https://www.kaggle.com/api/v1/datasets/download/truthisneverlinear/childrens-dental-panoramic-radiographs-dataset"
 
@@ -55,13 +59,14 @@ def main() -> None:
         with zipfile.ZipFile(tmp.name, "r") as zf:
             zf.extractall(OUTPUT_DIR)
 
-    #roboflow dataset
-    rf = Roboflow(api_key="58rqeTg0l5nzy3JWH1Sl")
+    # Roboflow dataset
+    rf = Roboflow(api_key=ROBOFLOW_API_KEY)
     project = rf.workspace("arshs-workspace-radio").project("vzrad2")
     version = project.version(6)
     dataset = version.download("yolov5")
-    shutil.move(dataset.location,OUTPUT_DIR)#For some reason version.download 'location' argument did not put data to OUTPUT_DIR
-    print("SDK dataset location:", dataset.location)
+    shutil.move(
+        dataset.location, OUTPUT_DIR
+    )  # For some reason version.download 'location' argument did not put data to OUTPUT_DIR
     print(f"Dataset extracted to {OUTPUT_DIR}")
 
 if __name__ == "__main__":

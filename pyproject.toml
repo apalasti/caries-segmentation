@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=2.4.3",
     "opencv-python>=4.13.0.92",
     "pillow>=12.1.1",
+    "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "roboflow>=1.2.16",
     "scikit-learn>=1.8.0",
