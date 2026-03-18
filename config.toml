@@ -2,20 +2,9 @@
 name = "caries-segmentation"
 
 [data]
-train_dataset_type = "DC1000" # "DC1000", "Dental", "Mixed"
-test_dataset_type = "Dental" # "Same" to use train dataset, or "DC1000", "Dental", "Mixed"
+preprocessed_path = "data/preprocessed"
+sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 images_size = [256, 256]
-val_split = 0.1
-test_split = 0.1
-base_path = "data/raw"
-dc1000_train_img = "data/raw/DC1000_dataset/train/images"
-dc1000_train_lbl = "data/raw/DC1000_dataset/train/labels"
-dc1000_test_img = "data/raw/DC1000_dataset/org_test_dataset/images"
-dc1000_test_lbl = "data/raw/DC1000_dataset/org_test_dataset/labels"
-adult_img = "data/raw/Dental_dataset/Adult tooth segmentation dataset/Dataset and code/train/images"
-adult_lbl = "data/raw/Dental_dataset/Adult tooth segmentation dataset/Dataset and code/train/masks"
-children_img = "data/raw/Dental_dataset/Childrens dental caries segmentation dataset/Train/images"
-children_lbl = "data/raw/Dental_dataset/Childrens dental caries segmentation dataset/Train/mask"
 
 [model]
 n_channels = 1
@@ -26,12 +15,18 @@ base_channels = 64
 [training]
 epochs = 100
 batch_size = 32
-learning_rate = 5e-4
-early_stopping_patience = 10
+learning_rate = 1e-3
 weight_decay = 1e-5
-num_workers = 4
+num_workers = 1
 output_dir = "checkpoints"
 seed = 42
+shuffle_train = false  # Set to false to use same batch every epoch (for testing)
+
+# Feature toggles
+early_stopping = false  # Enable early stopping
+early_stopping_patience = 10
+checkpointing = false  # Enable model checkpointing
+lr_scheduler = false  # Enable learning rate scheduler (ReduceLROnPlateau)
 
 [wandb]
 project = "caries-segmentation"
