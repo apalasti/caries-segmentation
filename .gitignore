@@ -24,6 +24,7 @@ Thumbs.db
 # Highly important to ignore all raw and processed image blobs
 data/raw/
 data/processed/
+data/preprocessed/
 data/**/*.jpg
 data/**/*.png
 data/**/*.json
