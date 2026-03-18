@@ -17,8 +17,13 @@ adult_lbl = "data/raw/Dental_dataset/Adult tooth segmentation dataset/Dataset an
 children_img = "data/raw/Dental_dataset/Childrens dental caries segmentation dataset/Train/images"
 children_lbl = "data/raw/Dental_dataset/Childrens dental caries segmentation dataset/Train/mask"
 
+[model]
+n_channels = 1
+n_classes = 1
+depth = 4
+base_channels = 64
+
 [training]
-model_type = "large_unet"
 epochs = 100
 batch_size = 32
 learning_rate = 5e-4
