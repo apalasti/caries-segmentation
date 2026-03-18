@@ -63,7 +63,64 @@ Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő
   + Véletlenszerű fényerő- és kontrasztállítás
 - Adathalmaz felosztása tanító, teszt és validációs adathalmazra
 
+= Adatvizualizációs terv
 
+- *Adathalmaz bemutatása*
+  - *Cél:* bemutatni, hogy milyen képeken tanul a modell
+  - *Vizualizációk:*
+    - panoráma röntgen képek mintái: képrács (image grid)
+    - adathalmaz felosztása tanító, validációs és teszt adathalmazra: pie chart
+    - szuvas / nem szuvas pixelek aránya: pie chart
+
+
+- *Annotáció vizualizáció*
+  - *Cél:* megmutatni, hogy mit tanul a modell
+  - *Vizualizációk:*
+    - eredeti röntgen kép: image
+    - ground truth maszk: maszk kép
+    - overlay (maszk rárajzolva az eredeti képre): overlay image
+    - több példa összehasonlítása: képrács (original – mask – overlay)
+/*
+- *Pixeleloszlás vizsgálata*
+  - *Cél:* az osztályok közötti egyensúlytalanság vizsgálata
+  - *Vizualizációk:*
+    - szuvas pixelek száma képenként: histogram
+    - szuvas / nem szuvas pixel arány képenként: boxplot
+    - szuvas területek gyakori elhelyezkedése a képeken: heatmap
+*/
+- *Adat augmentáció vizualizáció*
+  - *Cél:* bemutatni az alkalmazott adatnövelési módszereket
+  - *Vizualizációk:*
+    - eredeti kép és augmentált változatok: képrács
+      - rotate: transform példa
+      - flip: transform példa
+      - contrast változtatás: intensity transform
+
+- *Modell predikció vizualizáció*
+  - *Cél:* a modell szegmentációs eredményeinek bemutatása
+  - *Vizualizációk:*
+    - eredeti kép: image
+    - ground truth maszk: mask
+    - modell predikció: predicted mask
+    - különbség (ground truth vs prediction): difference map
+      - false positive pixelek: piros jelölés
+      - false negative pixelek: kék jelölés
+
+- *Tanulási görbék*
+  - *Cél:* a modell tanulási folyamatának vizsgálata
+  - *Vizualizációk:*
+    - training loss alakulása epoch szerint: vonaldiagram
+    - validation loss alakulása epoch szerint: vonaldiagram
+    - Dice score alakulása epoch szerint: vonaldiagram
+    - IoU alakulása epoch szerint: vonaldiagram
+
+- *Teljesítmény metrikák*
+  - *Cél:* a modell végső teljesítményének értékelése
+  - *Vizualizációk:*
+    - confusion matrix pixel szinten: confusion matrix diagram
+    - Dice score értékek: oszlopdiagram
+    - IoU értékek: oszlopdiagram
+    - precision és recall értékek: oszlopdiagram
 
 = Mélytanulási architktúrák
 
