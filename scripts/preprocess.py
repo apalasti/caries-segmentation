@@ -108,6 +108,8 @@ def handle_roboflow(row) -> bool:
 
 
 def main():
+    # TODO: place augmented images into the same place, throw out augmented images
+
     shutil.rmtree(PREPROCESSED_DIR, ignore_errors=True)
     PREPROCESSED_DIR.mkdir(exist_ok=True)
 

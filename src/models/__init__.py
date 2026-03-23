@@ -1,10 +1,11 @@
-from .unet import UNet, LargeUNet
+from .unet import UNet
+
 
 def get_model(config):
-    model_type = config['training'].get('model_type', 'unet')
-    if model_type == 'unet':
-        return UNet(n_channels=1, n_classes=1)
-    elif model_type == 'large_unet':
-        return LargeUNet(n_channels=1, n_classes=1)
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
+    model_config = config.get("model", {})
+    return UNet(
+        n_channels=model_config.get("n_channels", 1),
+        n_classes=model_config.get("n_classes", 1),
+        depth=model_config.get("depth", 4),
+        base_channels=model_config.get("base_channels", 64),
+    )
