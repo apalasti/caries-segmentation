@@ -24,8 +24,11 @@ class SegmentationLightningModule(pl.LightningModule):
             base_channels=model_config.get("base_channels", 64),
         )
 
-        self.bce_loss = nn.BCEWithLogitsLoss()
-        self.dice_loss_fn = DiceLoss()
+        bce_pos_weight = config["training"].get("bce_pos_weight", 1.0)
+        dice_weight = config["training"].get("dice_weight", [1.0, 1.0])
+
+        self.bce_loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(bce_pos_weight))
+        self.dice_loss_fn = DiceLoss(weight=dice_weight)
 
         self.learning_rate = config["training"].get("learning_rate", 5e-4)
         self.weight_decay = config["training"].get("weight_decay", 1e-4)
@@ -52,13 +55,13 @@ class SegmentationLightningModule(pl.LightningModule):
 
             wandb_images.append(
                 wandb.Image(
-                    np.concatenate([img, mask, pred], axis=1),
+                    img,
                     masks={
                         "ground_truth": {
                             "mask_data": mask > 0.5,
                             "class_labels": {0: "background", 1: "caries"},
                         },
-                        "prediction": {
+                        "predictions": {
                             "mask_data": pred > 0.5,
                             "class_labels": {0: "background", 1: "caries"},
                         },

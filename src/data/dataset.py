@@ -23,6 +23,7 @@ class BaseKariesDataset(Dataset):
         img = img.resize(self.size, resample=Image.BILINEAR)
         mask = mask.resize(self.size, resample=Image.NEAREST)
 
+        # TODO: Normalize by intensity
         img = np.array(img).astype(np.float32) / 255.0
         mask = np.array(mask)
         mask = (mask > 0).astype(np.float32)
