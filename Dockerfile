@@ -5,7 +5,9 @@ WORKDIR /app
 COPY pyproject.toml .
 RUN uv sync --no-dev
 
-ADD dataset.tar.gz /app/data/
+COPY dataset.tar.gz /app/data/dataset.tar.gz
+RUN tar -xzvf /app/data/dataset.tar.gz -C /app/data/ && rm -f /app/data/dataset.tar.gz
+
 COPY config.toml /app/config.toml
 
 COPY scripts/ /app/scripts
