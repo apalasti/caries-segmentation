@@ -84,6 +84,7 @@ expand_home_path() {
   case "$1" in
     "~") printf '%s\n' "$HOME" ;;
     "~/"*) printf '%s/%s\n' "$HOME" "${1#~/}" ;;
+    */"~/"*) printf '%s/%s\n' "${1%%/~/}" "${1#*/~/}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
@@ -162,6 +163,20 @@ fi
 REMOTE_SCRIPT
 }
 
+resolve_remote_repo_for_copy() {
+  ssh "${SSH_OPTS[@]}" "$REMOTE_USER_HOST" \
+    "bash -s -- '$REMOTE_REPO'" <<'REMOTE_RESOLVE'
+set -euo pipefail
+remote_repo="$1"
+case "$remote_repo" in
+  "~") remote_repo="$HOME" ;;
+  "~/"*) remote_repo="$HOME/${remote_repo#~/}" ;;
+  */"~/"*) remote_repo="${remote_repo%%/~/}/${remote_repo#*/~/}" ;;
+esac
+printf '%s\n' "$remote_repo"
+REMOTE_RESOLVE
+}
+
 stream_remote_logs() {
   local run_pid="$1"
   local run_log="$2"
@@ -206,7 +221,9 @@ printf '%s\n' "$remote_output"
 
 if [[ $remote_status -eq 42 ]]; then
   log "Remote dataset.tar.gz missing, copying archive to server"
-  scp "${SSH_OPTS[@]}" "$LOCAL_DATASET" "$REMOTE_USER_HOST:$REMOTE_REPO/dataset.tar.gz"
+  remote_repo_for_copy="$(resolve_remote_repo_for_copy)"
+  ssh "${SSH_OPTS[@]}" "$REMOTE_USER_HOST" "mkdir -p '$remote_repo_for_copy'"
+  scp "${SSH_OPTS[@]}" "$LOCAL_DATASET" "$REMOTE_USER_HOST:$remote_repo_for_copy/dataset.tar.gz"
   log "Retrying remote preflight/run after dataset copy"
   remote_output="$(run_remote 2>&1)"
   remote_status=$?
@@ -232,8 +249,8 @@ if [[ "$RUN_BUILD" == "1" ]]; then
   log "PID: $run_pid"
   log "Log: $run_log"
   log "Metadata dir: ${meta_dir:-unknown}"
-  log "Reattach log: ssh -i $SSH_KEY $REMOTE_USER_HOST 'tail -F \"$run_log\"'"
-  log "Check status: ssh -i $SSH_KEY $REMOTE_USER_HOST 'kill -0 $run_pid && echo running || echo stopped'"
+  log "Reattach log: ssh $REMOTE_USER_HOST 'tail -F \"$run_log\"'"
+  log "Check status: ssh $REMOTE_USER_HOST 'kill -0 $run_pid && echo running || echo stopped'"
 
   stream_remote_logs "$run_pid" "$run_log"
 fi

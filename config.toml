@@ -13,9 +13,9 @@ depth = 4
 base_channels = 64
 
 [training]
-epochs = 100
+epochs = 500
 batch_size = 32
-learning_rate = 1e-3
+learning_rate = 5e-4
 weight_decay = 1e-5
 num_workers = 1
 output_dir = "checkpoints"
