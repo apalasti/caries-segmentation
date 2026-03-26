@@ -2,7 +2,8 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY pyproject.toml /app/pyproject.toml
+COPY uv.lock /app/uv.lock
 RUN uv sync --no-dev
 
 COPY dataset.tar.gz /app/data/dataset.tar.gz
