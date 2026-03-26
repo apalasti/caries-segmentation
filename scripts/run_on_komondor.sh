@@ -5,7 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 REMOTE_USER_HOST="${REMOTE_USER_HOST:-nr_hapa2@komondor.hpc.dkf.hu}"
-REMOTE_REPO="${REMOTE_REPO:-~/caries-segmentation}"
+if [[ "$REMOTE_USER_HOST" == *"@"* ]]; then
+  REMOTE_USER="${REMOTE_USER_HOST%%@*}"
+else
+  REMOTE_USER="$USER"
+fi
+REMOTE_REPO="${REMOTE_REPO:-/home/${REMOTE_USER}/caries-segmentation}"
 REPO_URL="${REPO_URL:-https://github.com/apalasti/caries-segmentation}"
 LOCAL_DATASET="${LOCAL_DATASET:-$REPO_ROOT/dataset.tar.gz}"
 

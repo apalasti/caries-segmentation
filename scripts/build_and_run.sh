@@ -12,15 +12,26 @@ else
     echo "Neither $REPO_ROOT/.venv nor $REPO_ROOT/venv found; create a virtualenv first." >&2
     exit 1
 fi
-spython recipe "$REPO_ROOT/Dockerfile" > "$REPO_ROOT/moderate-data-science.sif"
+RECIPE_FILE="$REPO_ROOT/moderate-data-science.recipe"
+IMAGE="$REPO_ROOT/moderate-data-science.sif"
+
+if command -v spython >/dev/null 2>&1; then
+    spython recipe "$REPO_ROOT/Dockerfile" > "$RECIPE_FILE"
+elif python -c "import spython" >/dev/null 2>&1; then
+    python -m spython.main recipe "$REPO_ROOT/Dockerfile" > "$RECIPE_FILE"
+else
+    echo "spython missing; installing into active virtualenv..." >&2
+    python -m pip install --upgrade pip
+    python -m pip install spython
+    python -m spython.main recipe "$REPO_ROOT/Dockerfile" > "$RECIPE_FILE"
+fi
 
 if command -v sbatch >/dev/null 2>&1; then
     JOB_NAME="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 
     module load singularity
     # Must match CONTAINER in komondor_train.sbatch (default: $SLURM_SUBMIT_DIR/moderate-data-science.sif).
-    IMAGE="$REPO_ROOT/moderate-data-science.sif"
-    singularity build --fakeroot --fix-perms --force "$IMAGE" "$REPO_ROOT/moderate-data-science.sif"
+    singularity build --fakeroot --fix-perms --force "$IMAGE" "$RECIPE_FILE"
 
     # SLURM_SUBMIT_DIR is the cwd at sbatch time; build lives in REPO_ROOT.
     if ! SBATCH_OUT="$(cd "$REPO_ROOT" && sbatch --parsable --job-name="$JOB_NAME" "$REPO_ROOT/scripts/komondor_train.sbatch" 2>&1)"; then
