@@ -9,6 +9,9 @@ from .models.lightning_model import SegmentationLightningModule
 def evaluate():
     config = load_config()
 
+    seed = config["training"].get("seed", 42)
+    pl.seed_everything(seed, workers=True)
+
     wandb_logger = WandbLogger(
         project=config["wandb"]["project"],
         config=config,
@@ -25,6 +28,7 @@ def evaluate():
     trainer = pl.Trainer(
         accelerator="auto",
         devices="auto",
+        deterministic=True,
         logger=wandb_logger,
     )
 

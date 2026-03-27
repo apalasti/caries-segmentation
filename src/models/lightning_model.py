@@ -5,10 +5,10 @@ import numpy as np
 import wandb
 
 from .unet import UNet
-from ..utils.metrics import DiceLoss, dice_coeff
+from ..utils.metrics import DiceLoss
 
 
-indices = np.array(torch.randint(0, 1000, (3,)).tolist(), dtype=np.int32)
+LOGGED_IXS = np.array([0, 1, 2], dtype=np.int32)
 
 
 class SegmentationLightningModule(pl.LightningModule):
@@ -37,18 +37,17 @@ class SegmentationLightningModule(pl.LightningModule):
         return self.model(x)
 
     def _compute_loss(self, preds, targets):
-        return self.bce_loss(preds, targets) + self.dice_loss_fn(preds, targets)
+        bce = self.bce_loss(preds, targets)
+        dice = self.dice_loss_fn(preds, targets)
+        return bce + dice, bce, dice
 
     def _log_predictions(self, images, masks, preds, prefix="train"):
-        global indices
-
-        indices = indices % images.size(0)
-        images_np = images[indices, 0].cpu().numpy()
-        masks_np = masks[indices, 0].cpu().numpy()
-        preds_np = torch.sigmoid(preds[indices, 0]).detach().cpu().numpy()
+        images_np = images[LOGGED_IXS, 0].cpu().numpy()
+        masks_np = masks[LOGGED_IXS, 0].cpu().numpy()
+        preds_np = torch.sigmoid(preds[LOGGED_IXS, 0]).detach().cpu().numpy()
 
         wandb_images = []
-        for i, idx in enumerate(indices):
+        for i, idx in enumerate(LOGGED_IXS):
             img = images_np[i]
             mask = masks_np[i]
             pred = preds_np[i]
@@ -72,14 +71,29 @@ class SegmentationLightningModule(pl.LightningModule):
 
         self.logger.experiment.log({f"{prefix}/predictions": wandb_images})
 
+    def on_before_optimizer_step(self, optimizer):
+        total_norm = 0.0
+        for p in self.parameters():
+            if p.grad is not None:
+                total_norm += p.grad.data.norm(2).item() ** 2
+        total_norm = total_norm**0.5
+        self.log("grad_norm", total_norm, on_step=False, on_epoch=False, prog_bar=False)
+
     def training_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
-        loss = self._compute_loss(preds, masks)
-        dice = dice_coeff(preds, masks)
+        loss, bce, dice = self._compute_loss(preds, masks)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/bce_loss", bce, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/dice_loss", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "lr",
+            self.optimizers().optimizer.param_groups[0]["lr"],
+            on_step=True,
+            on_epoch=False,
+            prog_bar=False,
+        )
 
         if self.current_epoch % 1 == 0 and batch_idx == 0:
             self._log_predictions(images, masks, preds, prefix="train")
@@ -89,27 +103,27 @@ class SegmentationLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
-        loss = self._compute_loss(preds, masks)
-        dice = dice_coeff(preds, masks)
+        loss, bce, dice = self._compute_loss(preds, masks)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/bce_loss", bce, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/dice_loss", dice, on_step=False, on_epoch=True, prog_bar=True)
 
         if batch_idx == 0:
             self._log_predictions(images, masks, preds, prefix="val")
 
-        return {"val_loss": loss, "val_dice": dice}
+        return {"val_loss": loss, "val_dice_loss": dice}
 
     def test_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
-        loss = self._compute_loss(preds, masks)
-        dice = dice_coeff(preds, masks)
+        loss, bce, dice = self._compute_loss(preds, masks)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/bce_loss", bce, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/dice_loss", dice, on_step=False, on_epoch=True, prog_bar=True)
 
-        return {"test_loss": loss, "test_dice": dice}
+        return {"test_loss": loss, "test_dice_loss": dice}
 
     def configure_optimizers(self):  # type: ignore[override]
         optimizer = torch.optim.Adam(
@@ -118,10 +132,14 @@ class SegmentationLightningModule(pl.LightningModule):
 
         if self.hparams.get("training", {}).get("lr_scheduler", True):
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode="max", factor=0.5, patience=5
+                optimizer, mode="min", factor=0.5, patience=5, threshold=0.01
             )
             return [optimizer], [
-                {"scheduler": scheduler, "monitor": "val/dice", "interval": "epoch"}
+                {
+                    "scheduler": scheduler,
+                    "monitor": "val/dice_loss",
+                    "interval": "epoch",
+                }
             ]
         return optimizer
 

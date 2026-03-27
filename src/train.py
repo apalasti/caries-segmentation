@@ -4,6 +4,8 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
+    DeviceStatsMonitor,
+    RichProgressBar,
 )
 from pytorch_lightning.loggers import WandbLogger
 
@@ -15,11 +17,13 @@ from .models.lightning_model import SegmentationLightningModule
 def train():
     config = load_config()
 
+    seed = config["training"].get("seed", 42)
+    pl.seed_everything(seed, workers=True)
+
     wandb_logger = WandbLogger(
         project=config["wandb"]["project"],
         config=config,
     )
-
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
 
     data_module = SegmentationDataModule(config)
@@ -31,8 +35,8 @@ def train():
         checkpoint_callback = ModelCheckpoint(
             dirpath=config["training"]["output_dir"],
             filename="best_model",
-            monitor="val/dice",
-            mode="max",
+            monitor="val/dice_loss",
+            mode="min",
             save_top_k=1,
             verbose=True,
         )
@@ -40,23 +44,27 @@ def train():
 
     if config["training"].get("early_stopping", True):
         early_stop_callback = EarlyStopping(
-            monitor="val/dice",
+            monitor="val/dice_loss",
             patience=config["training"].get("early_stopping_patience", 10),
-            mode="max",
+            mode="min",
             verbose=True,
         )
         callbacks.append(early_stop_callback)
 
-    lr_monitor = LearningRateMonitor(logging_interval="epoch")
+    lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
+
+    callbacks.append(DeviceStatsMonitor())
+    callbacks.append(RichProgressBar())
 
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
-        limit_train_batches=1,
-        limit_val_batches=1,
-        log_every_n_steps=1,
+        limit_train_batches=config["training"].get("limit_train_batches", None),
+        limit_val_batches=config["training"].get("limit_val_batches", None),
+        log_every_n_steps=10,
         accelerator="auto",
         devices="auto",
+        deterministic=True,
         logger=wandb_logger,
         callbacks=callbacks,
         default_root_dir=config["training"]["output_dir"],
