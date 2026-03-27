@@ -15,22 +15,24 @@ base_channels = 64
 [training]
 epochs = 500
 batch_size = 32
-learning_rate = 5e-4
-weight_decay = 1e-5
-num_workers = 1
+learning_rate = 1e-4
+weight_decay = 0
+num_workers = 4
 output_dir = "checkpoints"
 seed = 42
 shuffle_train = false  # Set to false to use same batch every epoch (for testing)
 
 # Class imbalance weights (443:1 ratio from compute_class_ratio.py)
-bce_pos_weight = 200.0  # Weight for caries class in BCE loss (use 10.0 for more aggression)
-dice_weight = [1.0, 200.0]  # [background, caries] weights for Dice loss
+bce_pos_weight = 300.0  # Weight for caries class in BCE loss (use 10.0 for more aggression)
+dice_weight = [1.0, 300.0]  # [background, caries] weights for Dice loss
 
 # Feature toggles
 early_stopping = false  # Enable early stopping
 early_stopping_patience = 10
 checkpointing = false  # Enable model checkpointing
 lr_scheduler = false  # Enable learning rate scheduler (ReduceLROnPlateau)
+limit_train_batches = 1  # Number of train batches (if commented out use all)
+limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [wandb]
 project = "caries-segmentation"

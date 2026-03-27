@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import numpy as np
+from pytorch_lightning.loggers import WandbLogger
 import wandb
 
 from .unet import UNet
@@ -42,6 +43,9 @@ class SegmentationLightningModule(pl.LightningModule):
         return bce + dice, bce, dice
 
     def _log_predictions(self, images, masks, preds, prefix="train"):
+        if not isinstance(self.logger, WandbLogger):
+            return
+
         images_np = images[LOGGED_IXS, 0].cpu().numpy()
         masks_np = masks[LOGGED_IXS, 0].cpu().numpy()
         preds_np = torch.sigmoid(preds[LOGGED_IXS, 0]).detach().cpu().numpy()
@@ -77,7 +81,7 @@ class SegmentationLightningModule(pl.LightningModule):
             if p.grad is not None:
                 total_norm += p.grad.data.norm(2).item() ** 2
         total_norm = total_norm**0.5
-        self.log("grad_norm", total_norm, on_step=False, on_epoch=False, prog_bar=False)
+        self.log("grad_norm", total_norm, on_step=True, on_epoch=False, prog_bar=False)
 
     def training_step(self, batch, batch_idx):
         images, masks = batch
@@ -126,7 +130,7 @@ class SegmentationLightningModule(pl.LightningModule):
         return {"test_loss": loss, "test_dice_loss": dice}
 
     def configure_optimizers(self):  # type: ignore[override]
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
         )
 

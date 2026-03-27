@@ -1,5 +1,5 @@
 import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
@@ -12,10 +12,16 @@ def evaluate():
     seed = config["training"].get("seed", 42)
     pl.seed_everything(seed, workers=True)
 
-    wandb_logger = WandbLogger(
-        project=config["wandb"]["project"],
-        config=config,
-    )
+    try:
+        logger = WandbLogger(
+            project=config["wandb"]["project"],
+            config=config,
+        )
+    except Exception:
+        logger = CSVLogger(
+            save_dir=config["training"]["output_dir"],
+            name="csv_logs",
+        )
 
     data_module = SegmentationDataModule(config)
     data_module.setup("test")
@@ -29,14 +35,15 @@ def evaluate():
         accelerator="auto",
         devices="auto",
         deterministic=True,
-        logger=wandb_logger,
+        logger=logger,
     )
 
     results = trainer.test(model, dataloaders=data_module.test_dataloader())
 
     print(f"Test Results: {results}")
 
-    wandb_logger.experiment.finish()
+    if isinstance(logger, WandbLogger):
+        logger.experiment.finish()
 
 
 if __name__ == "__main__":

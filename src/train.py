@@ -7,7 +7,7 @@ from pytorch_lightning.callbacks import (
     DeviceStatsMonitor,
     RichProgressBar,
 )
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
@@ -20,10 +20,22 @@ def train():
     seed = config["training"].get("seed", 42)
     pl.seed_everything(seed, workers=True)
 
-    wandb_logger = WandbLogger(
-        project=config["wandb"]["project"],
-        config=config,
+    enable_logging = os.environ.get("WANDB_LOGGING", "true").lower() in (
+        "true",
+        "1",
+        "yes",
     )
+    if enable_logging:
+        logger = WandbLogger(
+            project=config["wandb"]["project"],
+            config=config,
+        )
+    else:
+        logger = CSVLogger(
+            save_dir=config["training"]["output_dir"],
+            name="csv_logs",
+        )
+
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
 
     data_module = SegmentationDataModule(config)
@@ -65,14 +77,15 @@ def train():
         accelerator="auto",
         devices="auto",
         deterministic=True,
-        logger=wandb_logger,
+        logger=logger,
         callbacks=callbacks,
         default_root_dir=config["training"]["output_dir"],
     )
 
     trainer.fit(model, datamodule=data_module)
 
-    wandb_logger.experiment.finish()
+    if isinstance(logger, WandbLogger):
+        logger.experiment.finish()
 
 
 if __name__ == "__main__":
