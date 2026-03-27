@@ -13,6 +13,8 @@ fi
 REMOTE_REPO="${REMOTE_REPO:-/home/${REMOTE_USER}/caries-segmentation}"
 REPO_URL="${REPO_URL:-https://github.com/apalasti/caries-segmentation}"
 LOCAL_DATASET="${LOCAL_DATASET:-$REPO_ROOT/dataset.tar.gz}"
+LOCAL_PREPROCESSED="${LOCAL_PREPROCESSED:-$REPO_ROOT/data/preprocessed}"
+LOCAL_ENV="${LOCAL_ENV:-$REPO_ROOT/.env}"
 
 SSH_OPTS=(
   -o StrictHostKeyChecking=accept-new
@@ -71,8 +73,16 @@ if [[ -z "$BRANCH" ]]; then
 fi
 
 if [[ ! -f "$LOCAL_DATASET" ]]; then
-  echo "Local dataset archive missing: $LOCAL_DATASET" >&2
-  exit 1
+  if [[ -d "$LOCAL_PREPROCESSED" ]]; then
+    log "Creating $LOCAL_DATASET from $LOCAL_PREPROCESSED"
+    prep_parent="$(cd "$(dirname "$LOCAL_PREPROCESSED")" && pwd)"
+    prep_base="$(basename "$LOCAL_PREPROCESSED")"
+    tar -czf "$LOCAL_DATASET" -C "$prep_parent" "$prep_base"
+  else
+    echo "Local dataset archive missing: $LOCAL_DATASET" >&2
+    echo "and preprocessed directory not found: $LOCAL_PREPROCESSED" >&2
+    exit 1
+  fi
 fi
 
 run_remote() {
@@ -144,6 +154,11 @@ fi
 if [[ ! -f "dataset.tar.gz" ]]; then
   printf '[remote_preflight] dataset.tar.gz missing in %s\n' "$remote_repo" >&2
   exit 42
+fi
+
+if [[ ! -f ".env" ]]; then
+  printf '[remote_preflight] .env missing in %s\n' "$remote_repo" >&2
+  exit 43
 fi
 
 if [[ "$run_build" == "1" ]]; then
@@ -230,6 +245,21 @@ if [[ $remote_status -eq 42 ]]; then
   ssh "${SSH_OPTS[@]}" "$REMOTE_USER_HOST" "mkdir -p '$remote_repo_for_copy'"
   scp "${SSH_OPTS[@]}" "$LOCAL_DATASET" "$REMOTE_USER_HOST:$remote_repo_for_copy/dataset.tar.gz"
   log "Retrying remote preflight/run after dataset copy"
+  remote_output="$(run_remote 2>&1)"
+  remote_status=$?
+  printf '%s\n' "$remote_output"
+fi
+
+if [[ $remote_status -eq 43 ]]; then
+  if [[ ! -f "$LOCAL_ENV" ]]; then
+    echo "Local .env file missing: $LOCAL_ENV" >&2
+    exit 1
+  fi
+  log "Remote .env missing, copying .env to server"
+  remote_repo_for_copy="$(resolve_remote_repo_for_copy)"
+  ssh "${SSH_OPTS[@]}" "$REMOTE_USER_HOST" "mkdir -p '$remote_repo_for_copy'"
+  scp "${SSH_OPTS[@]}" "$LOCAL_ENV" "$REMOTE_USER_HOST:$remote_repo_for_copy/.env"
+  log "Retrying remote preflight/run after .env copy"
   remote_output="$(run_remote 2>&1)"
   remote_status=$?
   printf '%s\n' "$remote_output"
