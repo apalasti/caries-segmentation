@@ -66,7 +66,7 @@ def train():
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
 
-    callbacks.append(DeviceStatsMonitor())
+    #callbacks.append(DeviceStatsMonitor())
     callbacks.append(RichProgressBar())
 
     trainer = pl.Trainer(
@@ -77,6 +77,8 @@ def train():
         accelerator="auto",
         devices="auto",
         deterministic=True,
+        precision="16-mixed",
+        gradient_clip_val=1.0,
         logger=logger,
         callbacks=callbacks,
         default_root_dir=config["training"]["output_dir"],

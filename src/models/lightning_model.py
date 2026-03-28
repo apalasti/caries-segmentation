@@ -23,6 +23,7 @@ class SegmentationLightningModule(pl.LightningModule):
             n_classes=model_config.get("n_classes", 1),
             depth=model_config.get("depth", 4),
             base_channels=model_config.get("base_channels", 64),
+            dropout=model_config.get("dropout", 0.0),
         )
 
         bce_pos_weight = config["training"].get("bce_pos_weight", 1.0)

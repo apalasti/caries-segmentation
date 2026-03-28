@@ -3,7 +3,7 @@ name = "caries-segmentation"
 
 [data]
 preprocessed_path = "data/preprocessed"
-sources = ["DC1000"]  # Filter by source in data.csv, empty = all
+# sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 images_size = [256, 256]
 
 [model]
@@ -11,28 +11,29 @@ n_channels = 1
 n_classes = 1
 depth = 4
 base_channels = 64
+dropout = 0.2
 
 [training]
 epochs = 500
-batch_size = 32
+batch_size = 64
 learning_rate = 1e-4
-weight_decay = 0
+weight_decay = 1e-4
 num_workers = 4
 output_dir = "checkpoints"
 seed = 42
-shuffle_train = false  # Set to false to use same batch every epoch (for testing)
+shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
 # Class imbalance weights (443:1 ratio from compute_class_ratio.py)
 bce_pos_weight = 300.0  # Weight for caries class in BCE loss (use 10.0 for more aggression)
 dice_weight = [1.0, 300.0]  # [background, caries] weights for Dice loss
 
 # Feature toggles
-early_stopping = false  # Enable early stopping
+early_stopping = true  # Enable early stopping
 early_stopping_patience = 10
-checkpointing = false  # Enable model checkpointing
-lr_scheduler = false  # Enable learning rate scheduler (ReduceLROnPlateau)
-limit_train_batches = 1  # Number of train batches (if commented out use all)
-limit_val_batches = 0  # Number of val batches (if commented out use all)
+checkpointing = true  # Enable model checkpointing
+lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
+# limit_train_batches = 1  # Number of train batches (if commented out use all)
+# limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [wandb]
 project = "caries-segmentation"
