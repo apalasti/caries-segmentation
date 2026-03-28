@@ -24,8 +24,8 @@ seed = 42
 shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
 # Class imbalance weights (443:1 ratio from compute_class_ratio.py)
-bce_pos_weight = 300.0  # Weight for caries class in BCE loss (use 10.0 for more aggression)
-dice_weight = [1.0, 300.0]  # [background, caries] weights for Dice loss
+bce_pos_weight = 400.0  # Weight for caries class in BCE loss (use 10.0 for more aggression)
+dice_weight = [1.0, 400.0]  # [background, caries] weights for Dice loss
 
 # Feature toggles
 early_stopping = true  # Enable early stopping

@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import wandb
 
 from .unet import UNet
-from ..utils.metrics import DiceLoss
+from ..utils.metrics import DiceLoss, iou_coeff
 
 
 LOGGED_IXS = np.array([0, 1, 2], dtype=np.int32)
@@ -109,15 +109,17 @@ class SegmentationLightningModule(pl.LightningModule):
         images, masks = batch
         preds = self(images)
         loss, bce, dice = self._compute_loss(preds, masks)
+        iou = iou_coeff(preds, masks)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/bce_loss", bce, on_step=False, on_epoch=True, prog_bar=False)
         self.log("val/dice_loss", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/iou", iou, on_step=False, on_epoch=True, prog_bar=True)
 
         if batch_idx == 0:
             self._log_predictions(images, masks, preds, prefix="val")
 
-        return {"val_loss": loss, "val_dice_loss": dice}
+        return {"val_loss": loss, "val_dice_loss": dice, "val_iou": iou}
 
     def test_step(self, batch, batch_idx):
         images, masks = batch

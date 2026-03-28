@@ -39,6 +39,11 @@ def train():
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
 
     data_module = SegmentationDataModule(config)
+    data_module.setup()
+    print(f"Train images: {len(data_module.train_dataset)}")
+    print(f"Validation images: {len(data_module.val_dataset)}")
+    print(f"Test images: {len(data_module.test_dataset)}")
+
     model = SegmentationLightningModule(config)
 
     callbacks = []
@@ -66,7 +71,7 @@ def train():
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
 
-    #callbacks.append(DeviceStatsMonitor())
+    # callbacks.append(DeviceStatsMonitor())
     callbacks.append(RichProgressBar())
 
     trainer = pl.Trainer(
