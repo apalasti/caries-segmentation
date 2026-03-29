@@ -1,6 +1,8 @@
 import hashlib
+import os
 import pathlib
 import shutil
+from collections import defaultdict
 from itertools import chain
 
 import pandas as pd
@@ -22,10 +24,9 @@ def get_dc1000_mask_path(image_path: pathlib.Path) -> pathlib.Path:
 
 
 def get_roboflow_label_path(image_path: pathlib.Path) -> pathlib.Path:
-    label_path = str(image_path).replace("/images/", "/labels/")
-    label_path = label_path.replace(".jpg", ".txt").replace(".png", ".txt")
-    return pathlib.Path(label_path)
-
+    if image_path.parent.name != "images":
+        raise ValueError("Expected image in 'images' folder")
+    return image_path.parent.parent / "labels" / (image_path.stem + ".txt")
 
 def parse_yolo_polygon(line: str) -> tuple[int, list[float]]:
     parts = line.strip().split()
@@ -78,6 +79,7 @@ def handle_roboflow(row) -> bool:
     if not image_path.exists() or not label_path.exists():
         return True
 
+
     caries_polygons = []
     with open(label_path, "r") as f:
         for line in f:
@@ -106,10 +108,46 @@ def handle_roboflow(row) -> bool:
     except Exception:
         return True
 
+def keep_one_in_roboflow_train():
+    roboflow_dir = pathlib.Path(RAW_DATA_DIR / "vzrad2-6/train")
+    image_dir = roboflow_dir / "images"
+    label_dir = roboflow_dir / "labels"
+
+    groups = defaultdict(list)
+
+    for f in os.listdir(image_dir):
+        if ".rf." in f:
+            base = f.split(".rf.")[0]
+            groups[base].append(f)
+
+    deleted = 0
+
+    for base, files in groups.items():
+        files = sorted(files)
+        keep = files[0]
+
+        for f in files[1:]:  # minden más törlése
+            img_path = os.path.join(image_dir, f)
+            lbl_path = os.path.join(label_dir, os.path.splitext(f)[0] + ".txt")
+
+            if os.path.exists(img_path):
+                os.remove(img_path)
+
+            if os.path.exists(lbl_path):
+                os.remove(lbl_path)
+
+            deleted += 1
+
+    print("Groups:", len(groups))
+    print("Deleted images:", deleted)
+    print("Remaining images:", len(os.listdir(image_dir)))
+
 
 def main():
     shutil.rmtree(PREPROCESSED_DIR, ignore_errors=True)
     PREPROCESSED_DIR.mkdir(exist_ok=True)
+
+    keep_one_in_roboflow_train()
 
     df = pd.DataFrame(
         {
