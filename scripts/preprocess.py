@@ -1,8 +1,6 @@
 import hashlib
-import os
 import pathlib
 import shutil
-from collections import defaultdict
 from itertools import chain
 
 import pandas as pd
@@ -108,48 +106,10 @@ def handle_roboflow(row) -> bool:
     except Exception:
         return True
 
-def keep_one_in_roboflow_train():
-    roboflow_dir = pathlib.Path(RAW_DATA_DIR / "vzrad2-6/train")
-    image_dir = roboflow_dir / "images"
-    label_dir = roboflow_dir / "labels"
-
-    groups = defaultdict(list)
-
-    for f in os.listdir(image_dir):
-        if ".rf." in f:
-            base = f.split(".rf.")[0]
-            groups[base].append(f)
-
-    deleted = 0
-
-    for base, files in groups.items():
-        files = sorted(files)
-        keep = files[0]
-
-        for f in files[1:]:  # minden más törlése
-            img_path = os.path.join(image_dir, f)
-            lbl_path = os.path.join(label_dir, os.path.splitext(f)[0] + ".txt")
-
-            if os.path.exists(img_path):
-                os.remove(img_path)
-
-            if os.path.exists(lbl_path):
-                os.remove(lbl_path)
-
-            deleted += 1
-
-    print("Groups:", len(groups))
-    print("Deleted images:", deleted)
-    print("Remaining images:", len(os.listdir(image_dir)))
-
 
 def main():
-    # TODO: place augmented images into the same place, throw out augmented images
-
     shutil.rmtree(PREPROCESSED_DIR, ignore_errors=True)
     PREPROCESSED_DIR.mkdir(exist_ok=True)
-
-    keep_one_in_roboflow_train()
 
     df = pd.DataFrame(
         {
@@ -171,6 +131,21 @@ def main():
     df["original_type"] = df["original"].apply(
         lambda fp: next((t for t in ["train", "valid", "test"] if t in fp), "unknown")
     )
+
+    n_before_dedup: int = (df["source"] == "roboflow").sum()
+    df["_dedup_key"] = df["original"].apply(
+        lambda p: name.split(".rf.", 1)[0] if ".rf." in (name := pathlib.Path(p).name) else p
+    )
+    df = (
+        df.sort_values("original", kind="mergesort")
+        .drop_duplicates(subset="_dedup_key", keep="first")
+        .drop(columns=["_dedup_key"])
+    )
+    n_after_dedup: int = (df["source"] == "roboflow").sum()
+    print(
+        f"Roboflow .rf.* dedup: dropped {n_before_dedup - n_after_dedup} duplicate row(s) out of {n_before_dedup}"
+    )
+
     df["id"] = df["original"].apply(lambda fp: hashlib.md5(fp.encode()).hexdigest())
 
     def deterministic_split(id_str: str, train: float = 0.7, val: float = 0.15) -> str:
