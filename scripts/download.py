@@ -21,6 +21,10 @@ OUTPUT_DIR = Path(__file__).parent.parent / "data" / "raw"
 
 
 def main() -> None:
+    print("Validating environment variables...")
+    if ROBOFLOW_API_KEY is None:
+        print("Error: ROBOFLOW_API_KEY is not set in the environment.")
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {OUTPUT_DIR}")
 
@@ -68,6 +72,7 @@ def main() -> None:
         dataset.location, OUTPUT_DIR
     )  # For some reason version.download 'location' argument did not put data to OUTPUT_DIR
     print(f"Dataset extracted to {OUTPUT_DIR}")
+
 
 if __name__ == "__main__":
     main()
