@@ -25,8 +25,8 @@ shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
 # Focal Loss config
 focal_gamma = 2.0
-focal_alpha = 0.01
-dice_loss = [1.0, 100.0]
+focal_alpha = 0.005
+dice_loss = [1.0, 200.0]
 
 # Feature toggles
 early_stopping = true  # Enable early stopping
