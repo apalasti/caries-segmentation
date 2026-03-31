@@ -97,6 +97,19 @@ def generate_all_pies(preprocessed_path, output_dir, size=(256,256)):
         split_counts,
         os.path.join(output_dir, "dataset_split_pie.png")
     )
+
+    source_counts = get_source_split_counts(preprocessed_path)
+
+    save_source_distribution_pies(
+        source_counts,
+        output_dir
+    )
+    generate_pixel_ratio_pies(
+        preprocessed_path,
+        output_dir,
+        size
+    )
+
 def load_train_pairs_by_source(preprocessed_path, source):
     csv_path = os.path.join(preprocessed_path, "data.csv")
 
@@ -246,7 +259,35 @@ def save_source_distribution_pies(counts, output_dir):
         plt.close()
         print(f"Saved {save_path}")
 
+def generate_pixel_ratio_pies(preprocessed_path, output_dir, size=(256,256)):
+    """
+    Creates pixel-level class distribution pies for train/val/test
+    """
 
+    os.makedirs(output_dir, exist_ok=True)
+
+    for split in ["train", "val", "test"]:
+
+        bg, caries = compute_pixel_ratio(
+            preprocessed_path,
+            split,
+            size=size
+        )
+
+        title = f"Pixel class distribution – {split.capitalize()}"
+
+        save_path = os.path.join(
+            output_dir,
+            f"class_ratio_{split}.png"
+        )
+        save_class_ratio_pie(
+            bg,
+            caries,
+            title,
+            save_path
+        )
+
+        print(f"Saved {save_path}")
 def generate_source_distribution_pies(preprocessed_path, output_dir):
     counts = get_source_split_counts(preprocessed_path)
     save_source_distribution_pies(counts, output_dir)
