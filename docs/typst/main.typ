@@ -122,13 +122,92 @@ Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő
     - IoU értékek: oszlopdiagram
     - precision és recall értékek: oszlopdiagram
 
+= Adatvizualizáció
+
+== Adathalmaz bemutatása
+
+Az adathalmaz felosztását az alábbi ábra szemlélteti, amely megmutatja a tanító, validációs és teszt halmaz arányát.
+
+#figure(
+  image("./figures/dataset_introduction/dataset_split_pie.png", width: 60%),
+  caption: [Az adathalmaz felosztása tanító, validációs és teszt halmazokra.]
+)
+
+Továbbá az alábbi ábra szemlélteti hogy a két felhasznált adathalmaz (Roboflow, DC1000) esetében az egyes adat szegmensek milyen arányban tartalamznak képeket a két említett adathalmazból.
+
+#figure(
+  grid(
+    columns: 3,
+    gutter: 10pt,
+
+    [
+      #image("./figures/dataset_introduction/source_distribution_train.png", width: 100%)
+    ],
+
+    [
+      #image("./figures/dataset_introduction/source_distribution_val.png", width: 100%)
+    ],
+
+    [
+      #image("./figures/dataset_introduction/source_distribution_test.png", width: 100%)
+    ],
+  ),
+  caption: [Az osztályeloszlás összehasonlítása a tanító, validációs és teszt halmazokban.]
+)
+
+== Annotáció vizualizáció
+
+#figure(  image("./figures/annotations/annotation_examples_roboflow.png", width: 60%),
+  caption: [Példák a roboflow adathalmazból az eredeti, maszkolt, illetve átfedésre (overlay)]
+)
+#figure(
+  image("./figures/annotations/annotation_examples_DC1000.png", width: 60%),
+  caption: [Példák a DC1000 adathalmazból az eredeti, maszkolt, illetve átfedésre (overlay)]
+)
+
+== Pixeleloszlás vizsgálata
+
+Az egyes osztályok pixeleloszlását az alábbi ábrák mutatják a különböző adathalmaz részekben. Megfigyelhető, hogy az osztályok aránya nem teljesen kiegyensúlyozott, ami hatással lehet a modell tanulására.
+
+
+#figure(
+  grid(
+    columns: 3,
+    gutter: 10pt,
+
+    [
+      #image("./figures/dataset_introduction/class_ratio_train.png", width: 100%)
+    ],
+
+    [
+      #image("./figures/dataset_introduction/class_ratio_val.png", width: 100%)
+    ],
+
+    [
+      #image("./figures/dataset_introduction/class_ratio_test.png", width: 100%)
+    ],
+  ),
+  caption: [Az osztályeloszlás összehasonlítása a tanító, validációs és teszt halmazokban.]
+)
+
+
+== Adat augmentáció vizualizáció
+
+
+== Modell predikció vizualizáció
+
+== Tanulási görbék
+
+== Teljesítmény metrikák
+
+
 = Mélytanulási architktúrák
 
 == Detekció és Osztályozás
 
 A detekció olyan feladat a képfeldolgozás területén, hogy egy objektum köré egy dobozt határozunk meg. Az osztályozás a képek vagy képrészletek megfelelő osztályba vagy osztályokba besorolása.
 
-  === ResNet 
+  === ResNet
 
 A Residual Network (ResNet) a mély konvolúciós hálózatok (CNN) eltűnő gradiens problémáját (vanishing gradient) oldja meg @he2016deep. Ennek alapja a reziduális blokk, amely egy "skip connection" (átugró kapcsolat) segítségével továbbítja a bemenetet a rétegek között.
 
@@ -148,7 +227,7 @@ $ sigma(z) = 1 / (1 + e^(-z)) $
 
 A szegmentáció célja a kép felosztása elkülönülő régiókra vagy szegmensekre a képen található, vizsgált objektum jellemzői alapján #cite(<Zanini2024>). A mi esetünkben ez azt jelenti, hogy a modellnek a kép egyes pixeleit kell besorolnia, hogy az szuvas területbe számít-e bele vagy háttérnek.
   === Kiértékelési metrikák
-Az alábbiakban bemutatjuk azokat a kiértékelési metrikákat, amelyeket a szakirodalomban is gyakran használnak szuvasodás szegmentálásánál #cite(<Zanini2024>). 
+Az alábbiakban bemutatjuk azokat a kiértékelési metrikákat, amelyeket a szakirodalomban is gyakran használnak szuvasodás szegmentálásánál #cite(<Zanini2024>).
 #let TP = "True Positive"
 // TP: helyesen előrejelzett pozitív pixelek
 
@@ -205,7 +284,7 @@ Jelen kutatásban az eredeti U-Net modellt vettük alapul, amelyet egy mélyebb,
 
 ==== Konvolúciós Blokk, Kernel, Padding és Stride
 
-Az architektúra alapköve a duplázott konvolúciós blokk (`DoubleConv`), amely egyaránt alkalmazásra kerül az "encoder" és a "decoder" ágban. Ez a blokk két egymást követő kétdimenziós konvolúciós rétegből (`Conv2d`) áll. A konvolúciós szűrők (kernel) mérete $3 times 3$, amely standard értékként elegendő a lokális térbeli mintázatok és élek felismeréséhez. 
+Az architektúra alapköve a duplázott konvolúciós blokk (`DoubleConv`), amely egyaránt alkalmazásra kerül az "encoder" és a "decoder" ágban. Ez a blokk két egymást követő kétdimenziós konvolúciós rétegből (`Conv2d`) áll. A konvolúciós szűrők (kernel) mérete $3 times 3$, amely standard értékként elegendő a lokális térbeli mintázatok és élek felismeréséhez.
 
 Annak érdekében, hogy a transzformáció során a hálózat feleslegesen ne csökkentse az aktivációs térképek térbeli felbontását (magasságát és szélességét), egységnyi kitöltést (`padding=1`) alkalmaztunk. A lépésköz (`stride`) értéke a konvolúciós blokk belsejében $1$, így a konvolúciós ablak minden egyes pixelre finoman rácsúszik, megőrizve a rácsfelbontást.
 
@@ -225,7 +304,7 @@ ahol $mu_"batch"$ a mini-batch adott térképre vonatkozó empirikus átlaga, $s
   = SOTA MODELLEK
 
   == CariesNet
-  
+
 A CariesNet egy mélytanulás-alapú szegmentációs modell, amely több stádiumú szuvas léziók detektálására készült panorámaröntgen-felvételeken. Architektúrája a U-Net struktúrájára épül, amelyet egy teljes skálájú axiális figyelmi (Full-Scale Axial Attention – FSAA) modullal, valamint egy részleges enkóder modullal egészítettek ki a szegmentációs teljesítmény javítása érdekében, különös tekintettel a kisebb kiterjedésű léziókra. A modellt 1159 panorámafelvételből álló adathalmazon tanították, amely összesen 3217 annotált szuvas régiót tartalmazott (kezdeti, középsúlyos és mély szuvasodás). A CariesNet 93,64%-os átlagos Dice-együtthatót és 93,61%-os pontosságot ért el, ezzel felülmúlva az olyan alapmodelleket, mint a U-Net, a DeepLabV3+ és a PraNet. Az FSAA modul különösen a lézióhatárok pontosabb kirajzolását segíti elő, míg a részleges enkóder a magas szintű jellemzők aggregálásával járul hozzá a precízebb szegmentációhoz #cite(<zhu2023cariesnet>).
 == CariesSeg
 

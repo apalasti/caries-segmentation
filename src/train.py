@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
@@ -10,14 +11,15 @@ from pytorch_lightning.loggers import WandbLogger
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
-
+from .utils.visualization import plot_training_curves
+from .utils.callbacks import MetricsHistoryCallback
 
 def train():
     config = load_config()
 
     wandb_logger = WandbLogger(
         project=config["wandb"]["project"],
-        config=config,
+        config=config
     )
 
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
@@ -48,7 +50,11 @@ def train():
         callbacks.append(early_stop_callback)
 
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
+
     callbacks.append(lr_monitor)
+    # metrics_cb = MetricsHistoryCallback()
+    #
+    # callbacks.append(metrics_cb)
 
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
@@ -63,7 +69,12 @@ def train():
     )
 
     trainer.fit(model, datamodule=data_module)
-
+    # plot_training_curves({
+    #     "train_loss": metrics_cb.train_loss,
+    #     "val_loss": metrics_cb.val_loss,
+    #     "val_dice": metrics_cb.val_dice,
+    #     "val_iou": metrics_cb.val_iou,
+    # }, save_dir="../docs/typst/figures/training")
     wandb_logger.experiment.finish()
 
 

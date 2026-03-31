@@ -9,12 +9,12 @@ images_size = [256, 256]
 [model]
 n_channels = 1
 n_classes = 1
-depth = 4
+depth = 1
 base_channels = 64
 
 [training]
-epochs = 500
-batch_size = 32
+epochs = 5
+batch_size = 4
 learning_rate = 5e-4
 weight_decay = 1e-5
 num_workers = 1
@@ -28,7 +28,7 @@ dice_weight = [1.0, 200.0]  # [background, caries] weights for Dice loss
 
 # Feature toggles
 early_stopping = false  # Enable early stopping
-early_stopping_patience = 10
+early_stopping_patience = 3
 checkpointing = false  # Enable model checkpointing
 lr_scheduler = false  # Enable learning rate scheduler (ReduceLROnPlateau)
 
