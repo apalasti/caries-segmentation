@@ -5,8 +5,10 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
+    DeviceStatsMonitor,
+    RichProgressBar,
 )
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
@@ -17,14 +19,33 @@ from pathlib import Path
 def train():
     config = load_config()
 
-    wandb_logger = WandbLogger(
-        project=config["wandb"]["project"],
-        config=config
+    seed = config["training"].get("seed", 42)
+    pl.seed_everything(seed, workers=True)
+
+    enable_logging = os.environ.get("WANDB_LOGGING", "true").lower() in (
+        "true",
+        "1",
+        "yes",
     )
+    if enable_logging:
+        logger = WandbLogger(
+            project=config["wandb"]["project"],
+            config=config,
+        )
+    else:
+        logger = CSVLogger(
+            save_dir=config["training"]["output_dir"],
+            name="csv_logs",
+        )
 
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
 
     data_module = SegmentationDataModule(config)
+    data_module.setup()
+    print(f"Train images: {len(data_module.train_dataset)}")
+    print(f"Validation images: {len(data_module.val_dataset)}")
+    print(f"Test images: {len(data_module.test_dataset)}")
+
     model = SegmentationLightningModule(config)
 
     callbacks = []
@@ -33,8 +54,8 @@ def train():
         checkpoint_callback = ModelCheckpoint(
             dirpath=config["training"]["output_dir"],
             filename="best_model",
-            monitor="val/dice",
-            mode="max",
+            monitor="val/dice_loss",
+            mode="min",
             save_top_k=1,
             verbose=True,
             save_last=True
@@ -43,28 +64,33 @@ def train():
 
     if config["training"].get("early_stopping", True):
         early_stop_callback = EarlyStopping(
-            monitor="val/dice",
+            monitor="val/dice_loss",
             patience=config["training"].get("early_stopping_patience", 10),
-            mode="max",
+            mode="min",
             verbose=True,
         )
         callbacks.append(early_stop_callback)
 
-    lr_monitor = LearningRateMonitor(logging_interval="epoch")
-
+    lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
     metrics_cb = MetricsHistoryCallback()
 
     callbacks.append(metrics_cb)
 
+    # callbacks.append(DeviceStatsMonitor())
+    callbacks.append(RichProgressBar())
+
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
-        limit_train_batches=1,
-        limit_val_batches=1,
-        log_every_n_steps=1,
+        limit_train_batches=config["training"].get("limit_train_batches", None),
+        limit_val_batches=config["training"].get("limit_val_batches", None),
+        log_every_n_steps=10,
         accelerator="auto",
         devices="auto",
-        logger=wandb_logger,
+        deterministic=True,
+        precision="16-mixed",
+        gradient_clip_val=1.0,
+        logger=logger,
         callbacks=callbacks,
         default_root_dir=config["training"]["output_dir"],
     )
@@ -78,7 +104,9 @@ def train():
        # "val_dice": metrics_cb.val_dice,
        #"val_iou": metrics_cb.val_iou,
     }, save_dir=str(save_dir))
-    wandb_logger.experiment.finish()
+
+    if isinstance(logger, WandbLogger):
+        logger.experiment.finish()
 
 
 if __name__ == "__main__":

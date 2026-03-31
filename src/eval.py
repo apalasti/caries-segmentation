@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
@@ -18,13 +18,25 @@ from .utils.visualization import sample_test_predictions, visualize_prediction, 
 def evaluate(max_samples=5, threshold=0.5):
     config = load_config()
 
-    wandb_logger = WandbLogger(
-        project=config["wandb"]["project"],
-        config=config,
-    )
+    seed = config["training"].get("seed", 42)
+    pl.seed_everything(seed, workers=True)
+
+    try:
+        logger = WandbLogger(
+            project=config["wandb"]["project"],
+            config=config,
+        )
+    except Exception:
+        logger = CSVLogger(
+            save_dir=config["training"]["output_dir"],
+            name="csv_logs",
+        )
 
     data_module = SegmentationDataModule(config)
     data_module.setup("test")
+
+    model = SegmentationLightningModule(config)
+
     best_model_path = f"{config['training']['output_dir']}/best_model.ckpt"
     model = SegmentationLightningModule.load_from_checkpoint(best_model_path, config=config)
     model.eval()
@@ -71,8 +83,8 @@ def evaluate(max_samples=5, threshold=0.5):
     for k, v in metrics.items():
         print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
 
-    wandb_logger.experiment.finish()
-    print("All evaluation visualizations saved to:", save_dir)
+    if isinstance(logger, WandbLogger):
+        logger.experiment.finish()
 
 
 if __name__ == "__main__":
