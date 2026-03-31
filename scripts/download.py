@@ -73,6 +73,13 @@ def main() -> None:
     )  # For some reason version.download 'location' argument did not put data to OUTPUT_DIR
     print(f"Dataset extracted to {OUTPUT_DIR}")
 
+    # Roboflow tooth detection dataset
+    tooth_project = rf.workspace("donghun-woo-nl6b5").project("tooth-p8snt")
+    tooth_version = tooth_project.version(1)
+    tooth_dataset = tooth_version.download("yolov8")
+    shutil.move(tooth_dataset.location, OUTPUT_DIR / Path(tooth_dataset.location).name)
+    print(f"Tooth dataset extracted to {OUTPUT_DIR}")
+
 
 if __name__ == "__main__":
     main()

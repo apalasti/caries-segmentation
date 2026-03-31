@@ -4,10 +4,10 @@ from pytorch_lightning.loggers import WandbLogger
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
+from .train_tooth_detection_model import evaluate_from_config as evaluate_tooth_detection_from_config
 
 
-def evaluate():
-    config = load_config()
+def evaluate_segmentation(config):
 
     wandb_logger = WandbLogger(
         project=config["wandb"]["project"],
@@ -33,6 +33,25 @@ def evaluate():
     print(f"Test Results: {results}")
 
     wandb_logger.experiment.finish()
+
+
+def evaluate():
+    config = load_config()
+    task = config.get("training", {}).get("task", "segmentation")
+
+    if task == "segmentation":
+        evaluate_segmentation(config)
+        return
+
+    if task in {"tooth_detection", "detection", "yolo_unet_conjunction"}:
+        metrics = evaluate_tooth_detection_from_config(config)
+        print(f"Detection Test Results: {metrics}")
+        return
+
+    raise ValueError(
+        f"Unsupported training.task='{task}'. "
+        "Use one of: segmentation, tooth_detection, yolo_unet_conjunction."
+    )
 
 
 if __name__ == "__main__":
