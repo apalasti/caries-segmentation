@@ -25,7 +25,6 @@ class BaseKariesDataset(Dataset):
         mask = mask.resize(self.size, resample=Image.NEAREST)
 
         img = np.array(img).astype(np.float32)
-        img = (img - img.min()) / (img.max() - img.min() + 1e-8)
 
         mask = np.array(mask)
         mask = (mask > 0).astype(np.float32)
@@ -34,6 +33,8 @@ class BaseKariesDataset(Dataset):
             augmented = self.transform(image=img, mask=mask)
             img = augmented["image"]
             mask = augmented["mask"]
+
+        img = (img - img.min()) / (img.max() - img.min() + 1e-8)
 
         if isinstance(img, np.ndarray):
             img = torch.from_numpy(img).unsqueeze(0)
