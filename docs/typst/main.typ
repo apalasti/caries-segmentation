@@ -73,6 +73,36 @@ Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő
   + Véletlenszerű fényerő- és kontrasztállítás
 - Adathalmaz felosztása tanító, teszt és validációs adathalmazra
 
+= Adatelőkészítés
+
+
+A Roboflow-train adatkészlet esetében gyakran előfordultak azonos képek különböző augmentált változatai. Ezeket csoportosítottuk az azonos alapnév alapján, és minden csoportból csak egy példányt tartottunk meg, míg a többi képet és a hozzá tartozó címke fájlokat eltávolítottuk. Ezzel a lépéssel biztosítottuk, hogy a tanító adatkészlet ne tartalmazzon redundáns példákat, ami a modell tanulási folyamatát torzíthatná.
+
+A különböző forrásokból származó képek maszkjainak előállítása is eltérő módszert igényelt. A DC1000 képeknél a megfelelő maszkokat a képekhez tartozó színes annotációs mappákból nyertük ki, míg a Roboflow képeknél a YOLO formátumú címkék alapján hoztunk létre pixelmaszkokat. Ehhez a poligon koordinátákat átskáláztuk a kép méretének megfelelően, és a pixelértékekkel reprezentált maszkot hoztunk létre, ahol a háttér 0, a szuvas terület pedig 255 értéket kapott. Így minden képhez elkészült a modell tanításához szükséges, egységes formátumú, pixelalapú maszk.
+
+Az előkészített adatkészletet ezután determinisztikus módon osztottuk szét tanító, validációs és teszt részhalmazokra. Minden képet egy egyedi azonosítóval láttunk el, amely biztosította, hogy ugyanaz a kép mindig ugyanabba a részhalmazba kerüljön.
+
+A feldolgozás során azokat a képeket, amelyekhez nem állt rendelkezésre megfelelő maszk vagy feldolgozásuk során hiba lépett fel, kidobtuk, így a végső adatkészlet csak teljesen feldolgozható, minőségi példákat tartalmazott.
+
+A tanító, validációs és teszt adatkészletek előfeldolgozott képpárokból állnak, ahol minden képhez egy bináris maszk tartozik a szuvas területek jelölésére. Az adatok 256×256 méretre vannak átméretezve és normalizálva. A különböző források (DC1000 és Roboflow) kontrolláltan kerülnek a tanító, validációs és teszt halmazokba, a reprodukálhatóság érdekében determinisztikus split-et alkalmaztunk. A SegmentationDataModule biztosítja a batch-ek konzisztens betöltését és a shuffle lehetőséget a tanításhoz, míg a BaseKariesDataset kezeli az egyes képpárokat, és a maszkok bináris ábrázolását.
+
+== Online Augmentáció
+
+A tanító adatokon online augmentációt alkalmazunk: a minták betöltésekor
+minden alkalommal (epochonként és batch-enként) véletlenszerűen transzformáljuk a
+képet és a hozzá tartozó szegmentációs maszkot, hogy a hálózat nagyobb
+változatosságot lásson. Az implementáció az Albumentations könyvtárra épül, a
+lépések egy összefűzött láncban futnak, előre rögzített sorrendben.
+
++ Vízszintes tükrözés: bal-jobb tükrözés; a maszk ugyanazzal a geometriával transzformálódik, mint a kép
++ Véletlenszerű méretarány: tisztán geometriai változatosságot ad (eltolás és forgatás nélkül)
++ Véletlenszerű fényerő és kontraszt:
+
+== Validáció
+
+Validáción (és tipikusan teszten) nem használunk véletlen augmentációt: csak
+az átméretezés történik ugyanarra a célméretre.
+
 = Adatvizualizációs terv
 
 - *Adathalmaz bemutatása*
@@ -98,14 +128,14 @@ Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő
     - szuvas / nem szuvas pixel arány képenként: boxplot
     - szuvas területek gyakori elhelyezkedése a képeken: heatmap
 */
-- *Adat augmentáció vizualizáció*
+/*- *Adat augmentáció vizualizáció*
   - *Cél:* bemutatni az alkalmazott adatnövelési módszereket
   - *Vizualizációk:*
     - eredeti kép és augmentált változatok: képrács
       - rotate: transform példa
       - flip: transform példa
       - contrast változtatás: intensity transform
-
+*/
 - *Modell predikció vizualizáció*
   - *Cél:* a modell szegmentációs eredményeinek bemutatása
   - *Vizualizációk:*
@@ -167,6 +197,8 @@ Továbbá az alábbi ábra szemlélteti hogy a két felhasznált adathalmaz (Rob
 
 == Annotáció vizualizáció
 
+Az alábbi két ábra a Roboflow és a DC1000 adathalmazból származó képek annotációit mutatja. Az eredeti képek mellett látható a bináris maszk és az overlay, amely vizuálisan kiemeli a szuvas területeket.
+
 #figure(  image("./figures/annotations/annotation_examples_roboflow.png", width: 60%),
   caption: [Példák a roboflow adathalmazból az eredeti, maszkolt, illetve átfedésre (overlay)]
 )
@@ -201,14 +233,36 @@ Az egyes osztályok pixeleloszlását az alábbi ábrák mutatják a különböz
 )
 
 
-== Adat augmentáció vizualizáció
+/*== Adat augmentáció vizualizáció ezt elhagyjuk mivel ugyis random*/
 
 
 == Modell predikció vizualizáció
 
+#figure(
+  image("./figures/evaluation/confusion_matrix.png", width: 100%),
+  caption: [Konfúziós mátrix.]
+)
+
+A tanító, validációs és teszt halmazokra vonatkozó osztályeloszlás ábrák bemutatják, hogy a szuvas és nem szuvas pixelek aránya nem teljesen kiegyensúlyozott.
+#figure(
+  image("./figures/evaluation/sample_1.png", width: 100%),
+  caption: [Egy példa a modell predikciójára.]
+)
 == Tanulási görbék
 
+A tanulási görbék ábrázolják a modell veszteség- és pontossági metrikáinak változását az epoch-ok  során  tanító illetve  validációs adathalmazon.
+#figure(
+  image("./figures/training/training_curves.png", width: 100%),
+  caption: [Tanulási görbék]
+)
 == Teljesítmény metrikák
+
+A konfúziós mátrix és a különböző teljesítménymutatók oszlopdiagramja összefoglaló képet ad a modell végső pontosságáról, a false positive és false negative hibákról, valamint a Dice, IoU, precision és recall értékekről.
+#figure(
+  image("./figures/evaluation/metrics_barplot.png", width: 100%),
+  caption: [Teljesítménymutatók oszlopdiagramon.]
+)
+
 
 
 = Mélytanulási architktúrák

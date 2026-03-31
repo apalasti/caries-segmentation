@@ -13,7 +13,7 @@ depth = 1
 base_channels = 64
 
 [training]
-epochs = 5
+epochs = 100
 batch_size = 4
 learning_rate = 5e-4
 weight_decay = 1e-5
@@ -28,8 +28,8 @@ dice_weight = [1.0, 200.0]  # [background, caries] weights for Dice loss
 
 # Feature toggles
 early_stopping = false  # Enable early stopping
-early_stopping_patience = 3
-checkpointing = false  # Enable model checkpointing
+early_stopping_patience = 10
+checkpointing = true  # Enable model checkpointing
 lr_scheduler = false  # Enable learning rate scheduler (ReduceLROnPlateau)
 
 [wandb]

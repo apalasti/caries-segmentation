@@ -3,7 +3,9 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import numpy as np
 import wandb
-
+import matplotlib.pyplot as plt
+import seaborn as sns
+import wandb
 from .unet import UNet
 from ..utils.metrics import DiceLoss, dice_coeff
 
@@ -15,6 +17,8 @@ class SegmentationLightningModule(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
         self.save_hyperparameters(config)
+
+        self.test_preds, self.test_targets =  [], []
 
         model_config = config.get("model", {})
         self.model = UNet(
@@ -92,8 +96,8 @@ class SegmentationLightningModule(pl.LightningModule):
         loss = self._compute_loss(preds, masks)
         dice = dice_coeff(preds, masks)
 
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/dice", dice.item(), on_step=False, on_epoch=True, prog_bar=True)
 
         if batch_idx == 0:
             self._log_predictions(images, masks, preds, prefix="val")
@@ -103,6 +107,14 @@ class SegmentationLightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
+
+        preds = torch.sigmoid(preds)
+
+        preds_bin = (preds > 0.5).int()
+
+        self.test_preds.append(preds_bin.cpu())
+        self.test_targets.append(masks.int().cpu())
+
         loss = self._compute_loss(preds, masks)
         dice = dice_coeff(preds, masks)
 
@@ -128,3 +140,38 @@ class SegmentationLightningModule(pl.LightningModule):
     @property
     def model_instance(self):
         return self.model
+
+    def on_test_epoch_end(self):
+
+        preds = torch.cat(self.test_preds).view(-1)
+        targets = torch.cat(self.test_targets).view(-1)
+
+        TP = ((preds == 1) & (targets == 1)).sum().item()
+        TN = ((preds == 0) & (targets == 0)).sum().item()
+        FP = ((preds == 1) & (targets == 0)).sum().item()
+        FN = ((preds == 0) & (targets == 1)).sum().item()
+
+        cm = [[TN, FP],
+              [FN, TP]]
+
+
+
+        plt.figure(figsize=(5, 5))
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=["Background", "Caries"],
+            yticklabels=["Background", "Caries"],
+        )
+
+        plt.xlabel("Predicted")
+        plt.ylabel("Ground Truth")
+        plt.title("Confusion Matrix")
+
+        plt.savefig("confusion_matrix.png")
+        plt.close()
+
+
+        wandb.log({"confusion_matrix": wandb.Image("confusion_matrix.png")})

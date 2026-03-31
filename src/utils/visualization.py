@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 from sklearn.metrics import confusion_matrix, precision_score, recall_score, jaccard_score
 import os
+import seaborn as sns
 
 def sample_test_predictions(model, dataloader, max_samples=5, device="auto"):
     """
@@ -26,6 +27,23 @@ def sample_test_predictions(model, dataloader, max_samples=5, device="auto"):
 
     return random.sample(all_samples, min(max_samples, len(all_samples)))
 
+def plot_metrics_bars(metrics, save_dir):
+    """
+    metrics: dict with keys ['precision','recall','dice','iou']
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    keys = ['precision','recall','dice','iou']
+    values = [metrics[k] for k in keys]
+
+    plt.figure(figsize=(6,4))
+    plt.bar(keys, values, color=['skyblue','orange','green','red'])
+    plt.ylim(0,1)
+    plt.title("Final Test Metrics")
+    plt.ylabel("Score")
+    for i,v in enumerate(values):
+        plt.text(i, v+0.02, f"{v:.2f}", ha='center')
+    plt.savefig(os.path.join(save_dir, "metrics_barplot.png"), dpi=300, bbox_inches="tight")
+    plt.close()
 
 def visualize_prediction(img, gt_mask, pred_mask, save_path=None):
     """
@@ -60,61 +78,43 @@ def visualize_prediction(img, gt_mask, pred_mask, save_path=None):
     plt.close()
 
 
-def plot_pixel_metrics(gt_masks, pred_masks, save_path=None):
-    """
-    Compute pixel-level confusion matrix, Dice, IoU, precision, recall
-    """
-    y_true = np.concatenate([m.flatten() for m in gt_masks])
-    y_pred = np.concatenate([m.flatten() for m in pred_masks])
+def plot_training_curves(logs, save_dir):
+    os.makedirs(save_dir, exist_ok=True)
 
-    cm = confusion_matrix(y_true, y_pred)
-    precision = precision_score(y_true, y_pred)
-    recall = recall_score(y_true, y_pred)
-    iou = jaccard_score(y_true, y_pred)
-    dice = 2 * (precision * recall) / (precision + recall + 1e-8)
+    epochs = range(1, len(logs.get("train_loss", [])) + 1)
+    plt.figure()
 
-    print("Pixel-level metrics:")
-    print("Confusion matrix:\n", cm)
-    print(f"Precision: {precision:.3f}, Recall: {recall:.3f}, Dice: {dice:.3f}, IoU: {iou:.3f}")
+    if "train_loss" in logs:
+        plt.plot(epochs, logs["train_loss"], label="Train Loss")
+    if "val_loss" in logs:
+        plt.plot(range(1, len(logs["val_loss"]) + 1), logs["val_loss"], label="Val Loss")
+    if "val_dice" in logs:
+        plt.plot(range(1, len(logs["val_dice"]) + 1), logs["val_dice"], label="Val Dice")
 
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.figure()
-        plt.imshow(cm, cmap="Blues")
-        plt.title("Pixel-level Confusion Matrix")
-        plt.colorbar()
-        plt.xlabel("Predicted")
-        plt.ylabel("Ground Truth")
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.xlabel("Epoch")
+    plt.ylabel("Metric")
+    plt.legend()
+    plt.grid(True)
+
+    # Abszolút útvonal
+    abs_save_dir = os.path.abspath(save_dir)
+    save_path = os.path.join(abs_save_dir, "training_curves.png")
+
+    try:
+        plt.savefig(save_path)
+        print(f" Saved training curves to: {save_path}")
+    except Exception as e:
+        print(f" Failed to save figure: {e}")
+    finally:
         plt.close()
 
-
-def plot_training_curves(logs, save_dir):
-    """
-    Plot training curves: loss, Dice, IoU
-    logs: dict with keys: 'train_loss', 'val_loss', 'val_dice', 'val_iou'
-    """
-    os.makedirs(save_dir, exist_ok=True)
-    epochs = range(1, len(logs['train_loss']) + 1)
-
-    # Loss curves
-    plt.figure()
-    plt.plot(epochs, logs['train_loss'], label="Train Loss")
-    plt.plot(epochs, logs['val_loss'], label="Val Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training and Validation Loss")
-    plt.legend()
-    plt.savefig(os.path.join(save_dir, "loss.png"), dpi=300, bbox_inches="tight")
-    plt.close()
-
-    # Metrics curves
-    plt.figure()
-    plt.plot(epochs, logs['val_dice'], label="Val Dice")
-    plt.plot(epochs, logs['val_iou'], label="Val IoU")
-    plt.xlabel("Epoch")
-    plt.ylabel("Score")
-    plt.title("Validation Metrics")
-    plt.legend()
-    plt.savefig(os.path.join(save_dir, "metrics.png"), dpi=300, bbox_inches="tight")
+def plot_confusion_matrix(metrics, save_path):
+    cm = np.array([[metrics["TP"], metrics["FP"]],
+                   [metrics["FN"], metrics["TN"]]])
+    plt.figure(figsize=(4,4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    plt.xlabel("Predicted")
+    plt.ylabel("Ground Truth")
+    plt.title("Pixel-level Confusion Matrix")
+    plt.savefig(save_path)
     plt.close()

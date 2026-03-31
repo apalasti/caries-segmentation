@@ -13,7 +13,7 @@ from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
 from .utils.visualization import plot_training_curves
 from .utils.callbacks import MetricsHistoryCallback
-
+from pathlib import Path
 def train():
     config = load_config()
 
@@ -37,6 +37,7 @@ def train():
             mode="max",
             save_top_k=1,
             verbose=True,
+            save_last=True
         )
         callbacks.append(checkpoint_callback)
 
@@ -52,9 +53,9 @@ def train():
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
 
     callbacks.append(lr_monitor)
-    # metrics_cb = MetricsHistoryCallback()
-    #
-    # callbacks.append(metrics_cb)
+    metrics_cb = MetricsHistoryCallback()
+
+    callbacks.append(metrics_cb)
 
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
@@ -69,12 +70,14 @@ def train():
     )
 
     trainer.fit(model, datamodule=data_module)
-    # plot_training_curves({
-    #     "train_loss": metrics_cb.train_loss,
-    #     "val_loss": metrics_cb.val_loss,
-    #     "val_dice": metrics_cb.val_dice,
-    #     "val_iou": metrics_cb.val_iou,
-    # }, save_dir="../docs/typst/figures/training")
+
+    save_dir = Path(__file__).parent.parent / "docs/typst/figures/training"
+    plot_training_curves({
+        "train_loss": metrics_cb.train_loss,
+        "val_loss": metrics_cb.val_loss,
+       # "val_dice": metrics_cb.val_dice,
+       #"val_iou": metrics_cb.val_iou,
+    }, save_dir=str(save_dir))
     wandb_logger.experiment.finish()
 
 
