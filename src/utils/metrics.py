@@ -9,6 +9,14 @@ def dice_coeff(pred, target, threshold=0.5):
     return (2.0 * intersection + smooth) / (pred.sum() + target.sum() + smooth)
 
 
+def iou_coeff(pred, target, threshold=0.5):
+    pred = (torch.sigmoid(pred) > threshold).float()
+    smooth = 1e-6
+    intersection = (pred * target).sum()
+    union = pred.sum() + target.sum() - intersection
+    return (intersection + smooth) / (union + smooth)
+
+
 class DiceLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceLoss, self).__init__()

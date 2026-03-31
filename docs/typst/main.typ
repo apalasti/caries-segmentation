@@ -67,9 +67,10 @@ Az alábbiakban bemutatjuk a választott DC1000 adathalmazt #cite(<wang2023multi
 Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő előkészítése érdekében szükséges elvégezni:
 - Képek átméretezése
 - Normalizálás
-- Augmentálás: 
+- Augmentálás (online, részletek: *Online Augmentáció* fejezet): 
   + Véletlenszerű vízszintes tükrözés
-  + Eltolás, skálázás és forgatás
+  + Véletlenszerű méretarány (`RandomScale`; eltolás és forgatás nélkül)
+  + Opcionális elastic deformáció (projekt `config.toml` szerint jelenleg kikapcsolva)
   + Véletlenszerű fényerő- és kontrasztállítás
 - Adathalmaz felosztása tanító, teszt és validációs adathalmazra
 
@@ -247,6 +248,23 @@ Az új architekturális elem a *YOLO + U-Net konjunkciós blokk*:
 
 Ezzel a felépítéssel a YOLO biztosítja a gyors régió-jelölést, míg az U-Net a pixelek szintjén pontosítja a szuvas területek határát.
 
+
+= Online Augmentáció
+
+A tanító adatokon *online augmentációt* alkalmazunk: a minták betöltésekor
+minden alkalommal (epochonként és batch-enként) véletlenszerűen transzformáljuk a
+képet és a hozzá tartozó szegmentációs maszkot, hogy a hálózat nagyobb
+változatosságot lásson. Az implementáció az `Albumentations` könyvtárra épül, a
+lépések egy összefűzött láncban futnak, előre rögzített sorrendben. 
+
++ *Vízszintes tükrözés*: bal-jobb tükrözés; a maszk ugyanazzal a geometriával transzformálódik, mint a kép
++ *Véletlenszerű méretarány*: tisztán geometriai változatosságot ad (eltolás és forgatás nélkül)
++ *Véletlenszerű fényerő és kontraszt*:
+
+== Validáció
+
+Validáción (és tipikusan teszten) *nem* használunk véletlen augmentációt: csak
+az átméretezés történik ugyanarra a célméretre.
 
 == Szegmentáció
 
