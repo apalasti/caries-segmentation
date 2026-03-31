@@ -24,11 +24,21 @@
 
 = Projektterv
 Az alábbiakban bemutatjuk vázlatosan a projekttervet 
-- Modellnek egy a U-net hálózatnak egy továbbfejlesztett verzióját használjuk
-- Baseline modellnek  sima U-net hálót használnánk
+- Detekcióhoz egy YOLO-stílusú modellt használunk
+- Szegmentációhoz U-Net modellt használunk
+- A két komponenst YOLO + U-Net konjunkciós architektúrában kapcsoljuk össze
 - Adathalmaznak a DC1000 adathalmazt használjuk
 - Kiértékelési metrikáknak a Precision, Recall, F1 illetve IoU metrikákat használjuk
 //- Cél: legalább egy 0.65 Precision illetve Recall elérése 
+
+== Modellterv
+
+A modellek fejlesztését négy egymásra épülő lépésben tervezzük:
+
+1. *Detektor alapmodell (YOLO):* fog-régiók detektálása bounding box szinten.
+2. *Szegmentáló alapmodell (U-Net):* pixel-szintű szuvasodás maszkok tanítása.
+3. *Konjunkciós modell (YOLO + U-Net):* a YOLO által detektált régiók kivágása, majd lokális maszkfinomítás U-Net segítségével.
+4. *Összehasonlítás és ablatív vizsgálat:* külön értékeljük a YOLO-only, U-Net-only és a konjunkciós pipeline teljesítményét.
 
 = Bevezetés
 
@@ -128,20 +138,35 @@ Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő
 
 A detekció olyan feladat a képfeldolgozás területén, hogy egy objektum köré egy dobozt határozunk meg. Az osztályozás a képek vagy képrészletek megfelelő osztályba vagy osztályokba besorolása.
 
-  === ResNet 
+  === YOLO és konjunkciós architektúra
 
-A Residual Network (ResNet) a mély konvolúciós hálózatok (CNN) eltűnő gradiens problémáját (vanishing gradient) oldja meg @he2016deep. Ennek alapja a reziduális blokk, amely egy "skip connection" (átugró kapcsolat) segítségével továbbítja a bemenetet a rétegek között.
+Jelen munkában a korábbi ResNet-alapú rész helyett YOLO-stílusú detektort használunk a fog-régiók gyors lokalizálására, majd a detekciókat U-Net alapú maszkolással finomítjuk. A detektor implementációja egy kompakt, egyléptékű YOLOv5-szerű felépítést követ.
 
-A matematikai definíció a következő. Legyen $x$ a réteg bemenete, és $cal(F)(x, {W_i})$ a tanulható konvolúciós transzformáció. A kimenet $y$ így írható fel:
+A YOLO detektor fő komponensei:
+- *Backbone:* egymásra épülő konvolúciós blokkok (`Conv2d + BatchNorm2d + SiLU`), amelyek többlépcsős leskálázással robusztus jellemzőtérképet építenek.
+- *Detection head:* $1 times 1$ konvolúció, amely horgonypontonként (anchor) a következőket becsüli: dobozparaméterek $(x, y, w, h)$, objektumosság és osztály-valószínűség.
+- *Dekódolás és szűrés:* sigmoid aktiváció, rácskoordináta-alapú visszaskálázás, majd Non-Maximum Suppression (NMS) a duplikált dobozok eltávolítására.
 
-$ y = cal(F)(x, {W_i}) + x $
+A detektor kimeneti csatornaszáma:
 
-Ha a bemenet és kimenet dimenziója eltér, egy lineáris projekciót ($W_s$) alkalmazunk:
+$ C_"out" = A * (5 + C) $
 
-$ y = cal(F)(x, {W_i}) + W_s x $
+ahol $A$ az anchorok száma, $C$ pedig az osztályok száma.
 
-A hálózat kimenetén általában egy Sigmoid aktivációs függvényt alkalmazunk bináris klasszifikáció (szuvas / nem szuvas) esetén:
-$ sigma(z) = 1 / (1 + e^(-z)) $
+A tanítás során kombinált veszteséget használunk:
+
+$ cal(L) = 5 cal(L)_"box" + cal(L)_"obj" + cal(L)_"cls" $
+
+ahol a dobozveszteség Smooth L1, az objektumosság és osztály veszteség pedig bináris keresztentrópia.
+
+Az új architekturális elem a *YOLO + U-Net konjunkciós blokk*:
+- a YOLO által detektált bounding box régiókat kivágjuk,
+- opcionális paddinget adunk a kontextus megőrzésére,
+- a kivágást fix U-Net bemeneti méretre mintavételezzük,
+- az U-Net lokális szegmentációt készít,
+- a bináris maszkot visszavetítjük az eredeti képre és régiónként egyesítjük.
+
+Ezzel a felépítéssel a YOLO biztosítja a gyors régió-jelölést, míg az U-Net a pixelek szintjén pontosítja a szuvas területek határát.
 
 
 == Szegmentáció
