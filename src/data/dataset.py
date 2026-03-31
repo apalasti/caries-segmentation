@@ -35,8 +35,11 @@ class BaseKariesDataset(Dataset):
             img = augmented["image"]
             mask = augmented["mask"]
 
-        img = torch.from_numpy(img).unsqueeze(0)
-        mask = torch.from_numpy(mask).unsqueeze(0)
+        if isinstance(img, np.ndarray):
+            img = torch.from_numpy(img).unsqueeze(0)
+        if isinstance(mask, np.ndarray):
+            mask = torch.from_numpy(mask).unsqueeze(0)
+
         return img, mask
 
 

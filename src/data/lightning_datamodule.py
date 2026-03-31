@@ -18,8 +18,11 @@ class SegmentationDataModule(pl.LightningDataModule):
         aug_config = config.get("augmentation", {})
         self.augmentation_enabled = aug_config.get("enabled", True)
         self.train_transform = (
-            get_train_transforms(aug_config) if self.augmentation_enabled else None
+            get_train_transforms(aug_config, self.size)
+            if self.augmentation_enabled
+            else None
         )
+        self.val_transform = get_val_transforms(self.size)
 
     def setup(self, stage=None):
         self.train_dataset = BaseKariesDataset(
@@ -30,12 +33,12 @@ class SegmentationDataModule(pl.LightningDataModule):
         self.val_dataset = BaseKariesDataset(
             load_split_pairs(self.preprocessed_path, "val", self.sources),
             size=self.size,
-            transform=get_val_transforms(),
+            transform=self.val_transform,
         )
         self.test_dataset = BaseKariesDataset(
             load_split_pairs(self.preprocessed_path, "test", self.sources),
             size=self.size,
-            transform=get_val_transforms(),
+            transform=self.val_transform,
         )
 
     def train_dataloader(self):

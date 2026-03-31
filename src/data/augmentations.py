@@ -2,7 +2,7 @@ import albumentations as A
 import numpy as np
 
 
-def get_train_transforms(config=None):
+def get_train_transforms(config=None, target_size=(256, 256)):
     if config is None:
         config = {}
 
@@ -41,8 +41,15 @@ def get_train_transforms(config=None):
             )
         )
 
+    if target_size:
+        transforms.append(
+            A.Resize(height=target_size[0], width=target_size[1], interpolation=1)
+        )
+
     return A.Compose(transforms) if transforms else None
 
 
-def get_val_transforms():
+def get_val_transforms(target_size=(256, 256)):
+    if target_size:
+        return A.Resize(height=target_size[0], width=target_size[1], interpolation=1)
     return None
