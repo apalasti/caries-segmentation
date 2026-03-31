@@ -7,9 +7,10 @@ import numpy as np
 
 
 class BaseKariesDataset(Dataset):
-    def __init__(self, data_pairs, size=(256, 256)):
+    def __init__(self, data_pairs, size=(256, 256), transform=None):
         self.data_pairs = data_pairs
         self.size = size
+        self.transform = transform
 
     def __len__(self):
         return len(self.data_pairs)
@@ -24,10 +25,15 @@ class BaseKariesDataset(Dataset):
         mask = mask.resize(self.size, resample=Image.NEAREST)
 
         img = np.array(img).astype(np.float32)
-        img = (img - img.min()) / (img.max() - img.min())
+        img = (img - img.min()) / (img.max() - img.min() + 1e-8)
 
         mask = np.array(mask)
         mask = (mask > 0).astype(np.float32)
+
+        if self.transform is not None:
+            augmented = self.transform(image=img, mask=mask)
+            img = augmented["image"]
+            mask = augmented["mask"]
 
         img = torch.from_numpy(img).unsqueeze(0)
         mask = torch.from_numpy(mask).unsqueeze(0)
