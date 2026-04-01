@@ -379,8 +379,8 @@ A projectben YOLOv5 és U-Net architektúrákat
 használunk a detekció és szegmentáció feladatokhoz. A két modellt egy
 konjunkciós architektúrában kapcsoljuk össze, ahol a YOLO detektor azonosítja a
 fogakat, majd az U-Net ezeken a régiókon szegmentációt végez.
-
-
+\
+\
 A YOLO detektor fő komponensei:
 - *Backbone:* egymásra épülő konvolúciós blokkok (`Conv2d + BatchNorm2d + SiLU`), amelyek többlépcsős leskálázással robusztus jellemzőtérképet építenek.
 - *Detekciós fej (detection head):* $1 times 1$ konvolúció, amely horgonypontonként (anchor) a következőket becsli: dobozparaméterek $(x, y, w, h)$, objektumosság és osztályvalószínűség.
@@ -391,11 +391,13 @@ A detektor kimeneti csatornaszáma a következő:
 $ C_"out" = A * (5 + C) $
 
 ahol $A$ az anchorok száma, $C$ pedig az osztályok száma. A képletben szereplő $5$ a YOLO doboz-leírás fix komponenseit jelenti: $(x, y, w, h)$ koordinátaparaméterek + objektumossági pontszám (objectness) @redmon2016yolo.
-
+\
+\
 A jelenlegi implementációban nem használunk közös, end-to-end kombinált
 veszteségfüggvényt a YOLO és az U-Net között. A két modell külön lépésben tanul:
 először a YOLO detektor, majd külön az U-Net a YOLO által kijelölt régiókon.
-
+\
+\
 Az új architekturális elem a *YOLO + U-Net konjunkciós blokk*:
 - a YOLO által detektált bounding box régiókat kivágjuk,
 - opcionális paddinget adunk a kontextus megőrzésére,
