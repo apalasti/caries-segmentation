@@ -39,7 +39,7 @@ def evaluate():
     config = load_config()
     task = config.get("training", {}).get("task", "segmentation")
 
-    if task == "segmentation":
+    if task in {"segmentation", "unet_with_yolo_boxes"}:
         evaluate_segmentation(config)
         return
 
@@ -50,7 +50,7 @@ def evaluate():
 
     raise ValueError(
         f"Unsupported training.task='{task}'. "
-        "Use one of: segmentation, tooth_detection, yolo_unet_conjunction."
+        "Use one of: segmentation, tooth_detection, unet_with_yolo_boxes, yolo_unet_conjunction."
     )
 
 

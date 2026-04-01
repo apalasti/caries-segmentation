@@ -10,6 +10,13 @@ from .yolo import YOLOv5
 
 
 class YOLOUNetConjunction(nn.Module):
+    """Inference-time conjunction: YOLO detection + U-Net mask refinement.
+
+    Training is intentionally handled by dedicated trainers:
+    - YOLO detector training in train_tooth_detection_model.py
+    - U-Net-on-YOLO-crops training in train_tooth_detection_model.py
+    """
+
     def __init__(
         self,
         detector: YOLOv5,
@@ -30,8 +37,11 @@ class YOLOUNetConjunction(nn.Module):
         images: Tensor,
         targets: List[Dict[str, Tensor]] | None = None,
     ) -> Dict[str, List[Dict[str, Tensor]] | Tensor] | Dict[str, Tensor]:
-        if self.training and targets is not None:
-            return self.detector(images, targets)
+        if targets is not None:
+            raise ValueError(
+                "YOLOUNetConjunction does not support joint training targets. "
+                "Use dedicated detector and yolo-guided U-Net training pipelines."
+            )
 
         detections = self.detector(images)
         masks = self._refine_with_unet(images, detections)

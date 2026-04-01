@@ -11,6 +11,9 @@ from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
 from .train_tooth_detection_model import train_from_config as train_tooth_detection_from_config
+from .train_tooth_detection_model import (
+    train_unet_with_yolo_boxes_from_config,
+)
 
 
 def train_segmentation(config):
@@ -75,13 +78,17 @@ def train():
         train_segmentation(config)
         return
 
-    if task in {"tooth_detection", "detection", "yolo_unet_conjunction"}:
+    if task in {"tooth_detection", "detection"}:
         train_tooth_detection_from_config(config)
+        return
+
+    if task in {"unet_with_yolo_boxes", "yolo_unet_conjunction"}:
+        train_unet_with_yolo_boxes_from_config(config)
         return
 
     raise ValueError(
         f"Unsupported training.task='{task}'. "
-        "Use one of: segmentation, tooth_detection, yolo_unet_conjunction."
+        "Use one of: segmentation, tooth_detection, unet_with_yolo_boxes, yolo_unet_conjunction."
     )
 
 

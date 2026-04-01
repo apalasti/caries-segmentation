@@ -2,12 +2,16 @@ import argparse
 import pathlib
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+import pytorch_lightning as pl
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision.ops import box_iou
 from torchvision.transforms import functional as F
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 
+from .data.dataset import load_split_pairs
 from .models.lightning_model import SegmentationLightningModule
 from .models.bbox.yolo import YOLOv5
 from .models.bbox.yolo_unet_conjunction import YOLOUNetConjunction
@@ -79,6 +83,103 @@ class ToothYoloDataset(Dataset):
             "image_id": torch.tensor([index]),
         }
         return image_tensor, target
+
+
+class YoloGuidedSegmentationDataset(Dataset):
+    """Segmentation dataset cropped using YOLO predicted boxes.
+
+    Each sample is resized to detector_size, cropped around the highest-confidence
+    predicted box (with optional padding), and then resized to unet_size.
+    """
+
+    def __init__(
+        self,
+        data_pairs: list[tuple[str, str]],
+        detector: YOLOv5,
+        detector_size: tuple[int, int],
+        unet_size: tuple[int, int],
+        score_threshold: float = 0.25,
+        crop_padding_ratio: float = 0.05,
+        device: torch.device | None = None,
+    ) -> None:
+        self.data_pairs = data_pairs
+        self.detector = detector
+        self.detector_size = detector_size
+        self.unet_size = unet_size
+        self.score_threshold = score_threshold
+        self.crop_padding_ratio = crop_padding_ratio
+        self.device = device or torch.device("cpu")
+        self.crop_boxes = self._predict_crop_boxes()
+
+    def __len__(self) -> int:
+        return len(self.data_pairs)
+
+    def _predict_crop_boxes(self) -> list[tuple[int, int, int, int]]:
+        boxes: list[tuple[int, int, int, int]] = []
+        det_h, det_w = self.detector_size
+
+        self.detector.eval()
+        with torch.no_grad():
+            for image_path, _ in self.data_pairs:
+                with Image.open(image_path) as img:
+                    gray = img.convert("L")
+                    resized_gray = gray.resize((det_w, det_h), Image.BILINEAR)
+
+                rgb = resized_gray.convert("RGB")
+                image_tensor = F.to_tensor(rgb).unsqueeze(0).to(self.device)
+                output = self.detector(image_tensor)[0]
+
+                pred_boxes = output["boxes"].detach().cpu()
+                pred_scores = output["scores"].detach().cpu()
+                keep = pred_scores >= self.score_threshold
+
+                if keep.any():
+                    kept_scores = pred_scores[keep]
+                    kept_boxes = pred_boxes[keep]
+                    best_idx = int(torch.argmax(kept_scores).item())
+                    x1, y1, x2, y2 = [float(v.item()) for v in kept_boxes[best_idx]]
+                else:
+                    x1, y1, x2, y2 = 0.0, 0.0, float(det_w), float(det_h)
+
+                bw = max(1.0, x2 - x1)
+                bh = max(1.0, y2 - y1)
+                px = bw * self.crop_padding_ratio
+                py = bh * self.crop_padding_ratio
+
+                xi1 = max(0, int(round(x1 - px)))
+                yi1 = max(0, int(round(y1 - py)))
+                xi2 = min(det_w, int(round(x2 + px)))
+                yi2 = min(det_h, int(round(y2 + py)))
+
+                if xi2 <= xi1 or yi2 <= yi1:
+                    xi1, yi1, xi2, yi2 = 0, 0, det_w, det_h
+
+                boxes.append((xi1, yi1, xi2, yi2))
+
+        return boxes
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        image_path, mask_path = self.data_pairs[index]
+        xi1, yi1, xi2, yi2 = self.crop_boxes[index]
+        det_h, det_w = self.detector_size
+        unet_h, unet_w = self.unet_size
+
+        with Image.open(image_path) as img:
+            gray = img.convert("L")
+            gray = gray.resize((det_w, det_h), Image.BILINEAR)
+            gray = gray.crop((xi1, yi1, xi2, yi2))
+            gray = gray.resize((unet_w, unet_h), Image.BILINEAR)
+
+        with Image.open(mask_path) as mask:
+            m = mask.convert("L")
+            m = m.resize((det_w, det_h), Image.NEAREST)
+            m = m.crop((xi1, yi1, xi2, yi2))
+            m = m.resize((unet_w, unet_h), Image.NEAREST)
+
+        image_tensor = F.to_tensor(gray)
+        mask_tensor = F.to_tensor(m)
+        mask_tensor = (mask_tensor > 0.5).float()
+        return image_tensor, mask_tensor
 
 
 def collate_fn(batch):
@@ -244,6 +345,141 @@ def train_tooth_detection(
             print(f"Saved best checkpoint: {best_ckpt}")
 
     print(f"Training done. Best val_loss={best_val:.4f}")
+
+
+def train_unet_with_yolo_boxes(
+    config: Dict[str, Any],
+    *,
+    detector_checkpoint: pathlib.Path,
+) -> None:
+    training_cfg = config.get("training", {})
+    detection_cfg = config.get("tooth_detection", {})
+
+    device = resolve_device(str(detection_cfg.get("device", training_cfg.get("device", "auto"))))
+    detector_size = int(detection_cfg.get("image_size", 640))
+    detector_hw = (detector_size, detector_size)
+
+    unet_size_raw = config.get("data", {}).get("images_size", [256, 256])
+    unet_size = (int(unet_size_raw[0]), int(unet_size_raw[1]))
+
+    anchors = _parse_anchors(detection_cfg.get("anchors"))
+    score_threshold = float(detection_cfg.get("score_threshold", 0.25))
+    nms_iou_threshold = float(detection_cfg.get("nms_iou_threshold", 0.45))
+    max_detections = int(detection_cfg.get("max_detections", 300))
+    crop_padding = float(detection_cfg.get("unet_crop_padding", 0.05))
+
+    detector = build_detector_model(
+        device=device,
+        anchors=anchors,
+        conf_threshold=score_threshold,
+        nms_iou_threshold=nms_iou_threshold,
+        max_detections=max_detections,
+    )
+
+    if not detector_checkpoint.exists():
+        raise FileNotFoundError(
+            f"Detector checkpoint not found: {detector_checkpoint}. "
+            "Train YOLO first with training.task='tooth_detection'."
+        )
+
+    detector_state = torch.load(detector_checkpoint, map_location=device)
+    detector.load_state_dict(detector_state)
+    detector.eval()
+
+    preprocessed_path = str(config["data"]["preprocessed_path"])
+    sources = config.get("data", {}).get("sources", [])
+
+    train_pairs = load_split_pairs(preprocessed_path, "train", sources)
+    val_pairs = load_split_pairs(preprocessed_path, "val", sources)
+
+    if len(train_pairs) == 0:
+        raise ValueError("No train samples found in segmentation preprocessed dataset.")
+    if len(val_pairs) == 0:
+        raise ValueError("No val samples found in segmentation preprocessed dataset.")
+
+    print("Preparing YOLO-guided crop boxes for U-Net training...")
+    train_ds = YoloGuidedSegmentationDataset(
+        train_pairs,
+        detector=detector,
+        detector_size=detector_hw,
+        unet_size=unet_size,
+        score_threshold=score_threshold,
+        crop_padding_ratio=crop_padding,
+        device=device,
+    )
+    val_ds = YoloGuidedSegmentationDataset(
+        val_pairs,
+        detector=detector,
+        detector_size=detector_hw,
+        unet_size=unet_size,
+        score_threshold=score_threshold,
+        crop_padding_ratio=crop_padding,
+        device=device,
+    )
+
+    batch_size = int(training_cfg.get("batch_size", 16))
+    num_workers = int(training_cfg.get("num_workers", 0))
+    shuffle = bool(training_cfg.get("shuffle_train", True))
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+    )
+
+    model = SegmentationLightningModule(config)
+
+    output_dir = pathlib.Path(training_cfg.get("output_dir", ROOT / "checkpoints"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    callbacks = []
+    if training_cfg.get("checkpointing", True):
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=str(output_dir),
+                filename="best_model_yolo_guided",
+                monitor="val/dice_loss",
+                mode="min",
+                save_top_k=1,
+                verbose=True,
+            )
+        )
+    if training_cfg.get("early_stopping", True):
+        callbacks.append(
+            EarlyStopping(
+                monitor="val/dice_loss",
+                patience=int(training_cfg.get("early_stopping_patience", 10)),
+                mode="min",
+                verbose=True,
+            )
+        )
+    callbacks.append(LearningRateMonitor(logging_interval="epoch"))
+
+    logger = WandbLogger(
+        project=config["wandb"]["project"],
+        config=config,
+    )
+
+    trainer = pl.Trainer(
+        max_epochs=int(training_cfg.get("epochs", 20)),
+        accelerator="auto",
+        devices="auto",
+        logger=logger,
+        callbacks=callbacks,
+        default_root_dir=str(output_dir),
+    )
+
+    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    logger.experiment.finish()
 
 
 def _compute_image_detection_counts(
@@ -436,6 +672,15 @@ def train_from_config(config: Dict[str, Any]) -> None:
         nms_iou_threshold=nms_iou_threshold,
         max_detections=max_detections,
     )
+
+
+def train_unet_with_yolo_boxes_from_config(config: Dict[str, Any]) -> None:
+    detection_cfg = config.get("tooth_detection", {})
+    out_dir = pathlib.Path(
+        detection_cfg.get("output_dir", detection_cfg.get("out_dir", DEFAULT_OUT_DIR))
+    )
+    detector_checkpoint = pathlib.Path(detection_cfg.get("detector_checkpoint", out_dir / "detector_best.pt"))
+    train_unet_with_yolo_boxes(config, detector_checkpoint=detector_checkpoint)
 
 
 def evaluate_from_config(config: Dict[str, Any]) -> Dict[str, float]:

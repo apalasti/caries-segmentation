@@ -13,7 +13,7 @@ depth = 4
 base_channels = 64
 
 [training]
-task = "yolo_unet_conjunction"  # "segmentation", "tooth_detection", or "yolo_unet_conjunction"
+task = "yolo_unet_conjunction"  # "segmentation", "tooth_detection", "unet_with_yolo_boxes", or "yolo_unet_conjunction"
 epochs = 20
 batch_size = 16
 learning_rate = 5e-4
@@ -45,6 +45,7 @@ eval_split = "test"  # train, val, or test
 score_threshold = 0.25
 eval_iou_threshold = 0.5
 use_unet_conjunction = false
+detector_checkpoint = "checkpoints/detection/detector_best.pt"
 unet_checkpoint = "checkpoints/best_model.ckpt"
 unet_mask_threshold = 0.5
 unet_crop_padding = 0.05

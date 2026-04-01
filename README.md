@@ -6,6 +6,32 @@
 uv run scripts/download.py
 ```
 
+## Training Modes
+
+The project now has explicit training modes via training.task in config.toml:
+
+- tooth_detection: trains YOLO detector on data/preprocessed_detection
+- unet_with_yolo_boxes: trains U-Net on crops generated from YOLO predicted boxes
+- segmentation: trains baseline U-Net on full images
+
+### 1) Train YOLO detector
+Set training.task to tooth_detection, then run:
+
+```bash
+uv run main.py --train
+```
+
+This writes detector checkpoints to checkpoints/detection by default.
+
+### 2) Train U-Net with YOLO box predictions
+Set training.task to unet_with_yolo_boxes (or yolo_unet_conjunction) and ensure tooth_detection.detector_checkpoint points to a trained YOLO checkpoint, then run:
+
+```bash
+uv run main.py --train
+```
+
+This uses YOLO to pick crop regions and trains U-Net on the cropped image/mask pairs.
+
 
 | Model/System                                                                                 | Imaging Type    | Key Features                                                                                        | Performance Metrics                                                                                                                                                        |
 | -------------------------------------------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
