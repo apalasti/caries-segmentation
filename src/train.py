@@ -52,8 +52,8 @@ def train():
         checkpoint_callback = ModelCheckpoint(
             dirpath=config["training"]["output_dir"],
             filename="best_model",
-            monitor="val/dice_loss",
-            mode="min",
+            monitor="val/dice",
+            mode="max",
             save_top_k=1,
             verbose=True,
         )
@@ -61,9 +61,9 @@ def train():
 
     if config["training"].get("early_stopping", True):
         early_stop_callback = EarlyStopping(
-            monitor="val/dice_loss",
+            monitor="val/dice",
             patience=config["training"].get("early_stopping_patience", 10),
-            mode="min",
+            mode="max",
             verbose=True,
         )
         callbacks.append(early_stop_callback)

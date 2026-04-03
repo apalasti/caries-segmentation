@@ -23,10 +23,12 @@ output_dir = "checkpoints"
 seed = 42
 shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
-# Focal Loss config
+# Active loss terms: any of "bce", "focal", "dice" (not both bce and focal)
+losses = ["bce", "dice"]
+
+# Focal Loss (only if "focal" is in losses)
 focal_gamma = 2.0
 focal_alpha = 0.95
-dice_weight = [1.0, 20.0]
 
 # Feature toggles
 early_stopping = true  # Enable early stopping
@@ -38,15 +40,15 @@ lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
 
 [augmentation]
 enabled = true
-horizontal_flip_prob = 0.5
+horizontal_flip_prob = 0
 scale_prob = 0
 scale_limit = 0.2
+brightness_contrast_prob = 0
 brightness_limit = 0.2
 contrast_limit = 0.2
-brightness_contrast_prob = 0.5
+elastic_prob = 0
 elastic_alpha = 30
 elastic_sigma = 5
-elastic_prob = 0
 
 [wandb]
 project = "caries-segmentation"

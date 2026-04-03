@@ -18,29 +18,18 @@ def iou_coeff(pred, target, threshold=0.5):
 
 
 class DiceLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True):
+    def __init__(self, weight=None):
         super(DiceLoss, self).__init__()
         self.weight = weight
-        self.size_average = size_average
 
-    def forward(self, inputs, targets, smooth=1):
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor, smooth=1e-6):
         inputs = torch.sigmoid(inputs)
         inputs = inputs.view(-1)
         targets = targets.view(-1)
 
-        if self.weight is not None:
-            weights = torch.tensor(self.weight, device=inputs.device)
-            targets_weighted = targets * (weights[1] - weights[0]) + weights[0]
-            intersection = (inputs * targets * targets_weighted).sum()
-            dice = (2.0 * intersection + smooth) / (
-                (inputs * targets_weighted).sum()
-                + (targets * targets_weighted).sum()
-                + smooth
-            )
-        else:
-            intersection = (inputs * targets).sum()
-            dice = (2.0 * intersection + smooth) / (
-                inputs.sum() + targets.sum() + smooth
-            )
+        intersection = (inputs * targets).sum()
+        dice = (2.0 * intersection + smooth) / (
+            inputs.sum() + targets.sum() + smooth
+        )
 
         return 1 - dice
