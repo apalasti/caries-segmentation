@@ -3,7 +3,7 @@ name = "caries-segmentation"
 
 [data]
 preprocessed_path = "data/preprocessed"
-# sources = ["DC1000"]  # Filter by source in data.csv, empty = all
+# sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 images_size = [256, 256]
 
 [model]
@@ -15,13 +15,13 @@ dropout = 0.2
 
 [training]
 epochs = 500
-batch_size = 16
+batch_size = 64
 learning_rate = 1e-4
-weight_decay = 0
-num_workers = 2
+weight_decay = 1e-4
+num_workers = 4
 output_dir = "checkpoints"
 seed = 42
-shuffle_train = false  # Set to false to use same batch every epoch (for testing)
+shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
 # Active loss terms: any of "bce", "focal", "dice" (not both bce and focal)
 losses = ["bce", "dice"]
@@ -37,12 +37,12 @@ focal_gamma = 2.0
 focal_alpha = 0.95
 
 # Feature toggles
-early_stopping = false  # Enable early stopping
+early_stopping = true  # Enable early stopping
 early_stopping_patience = 40
-checkpointing = false  # Enable model checkpointing
-lr_scheduler = false  # Enable learning rate scheduler (ReduceLROnPlateau)
-limit_train_batches = 1  # Number of train batches (if commented out use all)
-limit_val_batches = 0  # Number of val batches (if commented out use all)
+checkpointing = true  # Enable model checkpointing
+lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
+# limit_train_batches = 1  # Number of train batches (if commented out use all)
+# limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [augmentation]
 enabled = false
