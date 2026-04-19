@@ -24,7 +24,7 @@ seed = 42
 shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
 # Active loss terms: any of "bce", "focal", "dice" (not both bce and focal)
-losses = ["bce", "dice"]
+losses = ["dice"]
 
 # Focal Loss (only if "focal" is in losses)
 focal_gamma = 2.0
@@ -39,7 +39,7 @@ lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
 # limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [augmentation]
-enabled = true
+enabled = false
 horizontal_flip_prob = 0
 scale_prob = 0
 scale_limit = 0.2

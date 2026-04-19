@@ -4,7 +4,6 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
-    DeviceStatsMonitor,
     RichProgressBar,
 )
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
@@ -34,6 +33,7 @@ def train():
         logger = CSVLogger(
             save_dir=config["training"]["output_dir"],
             name="csv_logs",
+            flush_logs_every_n_steps=10,
         )
 
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
@@ -48,7 +48,9 @@ def train():
 
     callbacks = []
 
-    if config["training"].get("checkpointing", True):
+    if config["training"].get("checkpointing", True) and 0 < config["training"].get(
+        "limit_val_batches", 1
+    ):
         checkpoint_callback = ModelCheckpoint(
             dirpath=config["training"]["output_dir"],
             filename="best_model",
@@ -59,7 +61,9 @@ def train():
         )
         callbacks.append(checkpoint_callback)
 
-    if config["training"].get("early_stopping", True):
+    if config["training"].get("early_stopping", True) and 0 < config["training"].get(
+        "limit_val_batches", 1
+    ):
         early_stop_callback = EarlyStopping(
             monitor="val/dice",
             patience=config["training"].get("early_stopping_patience", 10),

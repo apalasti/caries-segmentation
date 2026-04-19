@@ -126,13 +126,6 @@ class SegmentationLightningModule(pl.LightningModule):
         if self.current_epoch % 1 == 0 and batch_idx == 0:
             self._log_predictions(images, masks, preds, prefix="train")
 
-        self.log(
-            "train/dice",
-            dice_coeff(preds, masks),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-        )
         return loss
 
     def validation_step(self, batch, batch_idx):
