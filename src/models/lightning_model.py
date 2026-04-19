@@ -13,15 +13,31 @@ from ..utils.focal_loss import FocalLoss
 LOGGED_IXS = np.array([0, 1, 2], dtype=np.int32)
 
 
+def _normalize_bce_pos_weight(value):
+    """Return a list of floats, or None if value is None."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return [float(value)]
+    if isinstance(value, (list, tuple)):
+        return [float(x) for x in value]
+    raise TypeError(
+        "training['bce_pos_weight'] must be a float or a list of floats, "
+        f"got {type(value).__name__}"
+    )
+
+
 class SegmentationLightningModule(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
         self.save_hyperparameters(config)
 
         model_config = config.get("model", {})
+
+        n_classes = model_config.get("n_classes", 1)
         self.model = UNet(
+            n_classes=n_classes,
             n_channels=model_config.get("n_channels", 1),
-            n_classes=model_config.get("n_classes", 1),
             depth=model_config.get("depth", 4),
             base_channels=model_config.get("base_channels", 64),
             dropout=model_config.get("dropout", 0.0),
@@ -31,7 +47,18 @@ class SegmentationLightningModule(pl.LightningModule):
         modules = {}
         for n in training.get("losses", ["bce", "dice"]):
             if n == "bce":
-                modules["bce"] = nn.BCEWithLogitsLoss()
+                bce_kwargs = {}
+                pw = _normalize_bce_pos_weight(training.get("bce_pos_weight"))
+                if pw is not None:
+                    if len(pw) != n_classes:
+                        raise ValueError(
+                            "training['bce_pos_weight'] must have length equal to model['n_classes'] "
+                            f"({n_classes}), got len={len(pw)}: {pw!r}"
+                        )
+                    bce_kwargs["pos_weight"] = torch.tensor(
+                        pw, dtype=torch.float32
+                    )
+                modules["bce"] = nn.BCEWithLogitsLoss(**bce_kwargs)
             elif n == "focal":
                 modules["focal"] = FocalLoss(
                     gamma=training.get("focal_gamma", 2.0),
@@ -53,12 +80,27 @@ class SegmentationLightningModule(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
+    def _bce_multiplier(self) -> float:
+        training = self.hparams["training"]
+        term = float(training.get("bce_term_weight", 1.0))
+        ramp_epochs = int(training.get("bce_ramp_epochs", 0))
+        if ramp_epochs <= 0:
+            return term
+        ramp = min(1.0, float(self.current_epoch) / float(ramp_epochs))
+        return ramp * term
+
     def _compute_loss(self, preds, targets):
-        parts = {
-            name: mod(preds, targets) for name, mod in self.loss_modules.items()
-        }
+        parts = {}
+        bce_mult = None
+        for name, mod in self.loss_modules.items():
+            raw = mod(preds, targets)
+            if name == "bce":
+                bce_mult = self._bce_multiplier()
+                parts[name] = raw * bce_mult
+            else:
+                parts[name] = raw
         total = sum(parts.values())
-        return total, parts
+        return total, parts, bce_mult
 
     def _log_predictions(self, images, masks, preds, prefix="train"):
         if not isinstance(self.logger, WandbLogger):
@@ -104,9 +146,17 @@ class SegmentationLightningModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
-        loss, parts = self._compute_loss(preds, masks)
+        loss, parts, bce_mult = self._compute_loss(preds, masks)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        if bce_mult is not None:
+            self.log(
+                "train/bce_lambda",
+                bce_mult,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=False,
+            )
         for name, val in parts.items():
             self.log(
                 f"train/{name}_loss",
@@ -131,7 +181,7 @@ class SegmentationLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
-        loss, parts = self._compute_loss(preds, masks)
+        loss, parts, _ = self._compute_loss(preds, masks)
         iou = iou_coeff(preds, masks)
         dice_score = dice_coeff(preds, masks)
 
@@ -161,7 +211,7 @@ class SegmentationLightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         images, masks = batch
         preds = self(images)
-        loss, parts = self._compute_loss(preds, masks)
+        loss, parts, _ = self._compute_loss(preds, masks)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         for name, val in parts.items():
