@@ -28,7 +28,7 @@ losses = ["bce", "dice"]
 
 # BCE (only if "bce" is in losses)
 # Per-class positive weights for BCEWithLogitsLoss; length must match model.n_classes.
-bce_pos_weight = [100.0]
+bce_pos_weight = [50.0]
 bce_ramp_epochs = 50  # Linear ramp: BCE multiplier 0 at epoch 0 → 1.0 at this epoch; 0 = disabled
 bce_term_weight = 0.1  # Asymptotic scale on BCE after ramp (also when ramp is off)
 
@@ -45,14 +45,14 @@ lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
 # limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [augmentation]
-enabled = false
-horizontal_flip_prob = 0
-scale_prob = 0
+enabled = true
+horizontal_flip_prob = 0.5
+scale_prob = 0.5
 scale_limit = 0.2
-brightness_contrast_prob = 0
+brightness_contrast_prob = 0.5
 brightness_limit = 0.2
 contrast_limit = 0.2
-elastic_prob = 0
+elastic_prob = 0.3
 elastic_alpha = 30
 elastic_sigma = 5
 
