@@ -1,9 +1,11 @@
 import argparse
 import csv
+import hashlib
 import pathlib
 import re
 import shutil
 from dataclasses import dataclass
+import logging
 
 from PIL import Image
 from tqdm import tqdm
@@ -80,6 +82,7 @@ def parse_yolo_labels(label_path: pathlib.Path) -> list[YoloBox]:
                 continue
             parts = line.split()
             if len(parts) < 5:
+                logging.warning(f"Invalid label line (not enough parts): {line}")
                 continue
 
             class_id = int(float(parts[0]))
@@ -101,6 +104,9 @@ def parse_yolo_labels(label_path: pathlib.Path) -> list[YoloBox]:
             # YOLO polygon format: class x1 y1 x2 y2 ... -> convert polygon to bbox
             coords = [float(v) for v in parts[1:]]
             if len(coords) < 6 or len(coords) % 2 != 0:
+                logging.warning(
+                    f"Invalid polygon label (not enough points or odd number of coords): {line}"
+                )
                 continue
 
             xs = coords[::2]
@@ -129,7 +135,9 @@ def clip(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
-def sanitize_boxes(boxes: list[YoloBox], min_box_size: float, box_padding: float) -> list[YoloBox]:
+def sanitize_boxes(
+    boxes: list[YoloBox], min_box_size: float, box_padding: float
+) -> list[YoloBox]:
     cleaned: list[YoloBox] = []
     for b in boxes:
         w = clip(b.width, 0.0, 1.0)
@@ -194,16 +202,20 @@ def process_split(
     skipped = 0
     kept_boxes = 0
 
-    image_paths = sorted([p for p in src_images.iterdir() if p.suffix.lower() in VALID_EXTS])
+    image_paths = sorted(
+        [p for p in src_images.iterdir() if p.suffix.lower() in VALID_EXTS]
+    )
     for image_path in tqdm(image_paths, desc=f"Preprocessing {src_split}"):
         label_path = src_labels / f"{image_path.stem}.txt"
         if not label_path.exists():
             skipped += 1
+            logging.warning(f"Label file not found for image: {image_path}")
             continue
 
         boxes = sanitize_boxes(parse_yolo_labels(label_path), min_box_size, box_padding)
         if not boxes:
             skipped += 1
+            logging.info(f"No valid boxes for image (skipping): {image_path}")
             continue
 
         with Image.open(image_path) as img:
@@ -243,34 +255,80 @@ def main() -> None:
     shutil.rmtree(OUT_DIR, ignore_errors=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    split_mapping = {
-        "train": "train",
-        "valid": "val",
-        "test": "test",
-    }
-
     rows: list[dict[str, str]] = []
-    totals: dict[str, tuple[int, int, int]] = {}
 
-    for src_split, dst_split in split_mapping.items():
-        if not (dataset_dir / src_split).exists():
-            totals[src_split] = (0, 0, 0)
+    # Determinisztikus split logika a fájlnévből kiindulva (Ahogy a preprocess.py-ban)
+    def deterministic_split(id_str: str, train: float = 0.7, val: float = 0.15) -> str:
+        u = int(id_str[:8], 16) / (16**8)
+        if u < train:
+            return "train"
+        if u < train + val:
+            return "val"
+        return "test"
+
+    totals = {"train": [0, 0, 0], "val": [0, 0, 0], "test": [0, 0, 0]}
+
+    src_splits = ["train", "valid", "test"]
+    all_images = []
+    for s in src_splits:
+        img_dir = dataset_dir / s / "images"
+        if img_dir.exists():
+            all_images.extend(
+                p for p in img_dir.iterdir() if p.suffix.lower() in VALID_EXTS
+            )
+
+    for dst in totals.keys():
+        (OUT_DIR / dst / "images").mkdir(parents=True, exist_ok=True)
+        (OUT_DIR / dst / "labels").mkdir(parents=True, exist_ok=True)
+
+    for image_path in tqdm(all_images, desc="Preprocessing images"):
+        label_path = image_path.parent.parent / "labels" / f"{image_path.stem}.txt"
+
+        if not label_path.exists():
             continue
-        totals[src_split] = process_split(
-            dataset_dir=dataset_dir,
-            src_split=src_split,
-            dst_split=dst_split,
-            max_side=args.max_side,
-            min_box_size=args.min_box_size,
-            box_padding=args.box_padding,
-            rows=rows,
+
+        # Hash split kiszámítása a fájlnév (stem) alapján
+        hash_val = hashlib.md5(image_path.name.encode()).hexdigest()
+        dst_split = deterministic_split(hash_val)
+
+        boxes = sanitize_boxes(
+            parse_yolo_labels(label_path), args.min_box_size, args.box_padding
         )
+        if not boxes:
+            totals[dst_split][1] += 1
+            continue
+
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            out_img = resize_keep_aspect(img, args.max_side)
+
+        dst_images = OUT_DIR / dst_split / "images"
+        dst_labels = OUT_DIR / dst_split / "labels"
+
+        out_img_path = dst_images / f"{image_path.stem}.jpg"
+        out_lbl_path = dst_labels / f"{image_path.stem}.txt"
+
+        out_img.save(out_img_path, format="JPEG", quality=95)
+        write_labels(out_lbl_path, boxes)
+
+        rows.append(
+            {
+                "split": dst_split,
+                "image": str(out_img_path.relative_to(ROOT)),
+                "label": str(out_lbl_path.relative_to(ROOT)),
+                "num_boxes": str(len(boxes)),
+                "width": str(out_img.size[0]),
+                "height": str(out_img.size[1]),
+            }
+        )
+
+        totals[dst_split][0] += 1
+        totals[dst_split][2] += len(boxes)
 
     metadata_path = OUT_DIR / "metadata.csv"
     with metadata_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
-            f,
-            fieldnames=["split", "image", "label", "num_boxes", "width", "height"],
+            f, fieldnames=["split", "image", "label", "num_boxes", "width", "height"]
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -278,7 +336,6 @@ def main() -> None:
     print(f"Detection preprocessing complete: {OUT_DIR}")
     for split, (processed, skipped, boxes) in totals.items():
         print(f"- {split}: processed={processed}, skipped={skipped}, boxes={boxes}")
-    print(f"Metadata saved: {metadata_path}")
 
 
 if __name__ == "__main__":

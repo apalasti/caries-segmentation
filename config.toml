@@ -13,7 +13,7 @@ depth = 4
 base_channels = 64
 
 [training]
-task = "yolo_unet_conjunction"  # "segmentation", "tooth_detection", "unet_with_yolo_boxes", or "yolo_unet_conjunction"
+task = "tooth_detection"  # "segmentation", "tooth_detection", "unet_with_yolo_boxes", or "yolo_unet_conjunction"
 epochs = 20
 batch_size = 16
 learning_rate = 5e-4
@@ -39,8 +39,8 @@ output_dir = "checkpoints/detection"
 device = "auto"
 image_size = 640  # YOLO input is resized to image_size x image_size
 anchors = [[10.0, 13.0], [16.0, 30.0], [33.0, 23.0], [30.0, 61.0], [62.0, 45.0], [59.0, 119.0]]
-max_detections = 300
-nms_iou_threshold = 0.45
+max_detections = 32
+nms_iou_threshold = 0.65
 eval_split = "test"  # train, val, or test
 score_threshold = 0.25
 eval_iou_threshold = 0.5
