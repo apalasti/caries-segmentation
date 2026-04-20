@@ -25,6 +25,7 @@ class BaseKariesDataset(Dataset):
         mask = mask.resize(self.size, resample=Image.NEAREST)
 
         img = np.array(img).astype(np.float32)
+        img /= 255 
         mask = np.array(mask)
         mask = (mask > 0).astype(np.float32)
 
