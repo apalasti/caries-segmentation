@@ -120,6 +120,38 @@ def padded_canvas_hw(orig_h: int, orig_w: int, ph: int, pw: int) -> tuple[int, i
     return H, W
 
 
+def stitch_tiles(
+    tiles: torch.Tensor,
+    canvas_h: int,
+    canvas_w: int,
+    tile_h: int,
+    tile_w: int,
+) -> torch.Tensor:
+    """Paste tile batch into a canvas (same order as ``iter_tile_top_lefts``).
+
+    Args:
+        tiles: ``(B, N, C, tile_h, tile_w)`` row-major over ``(y0, x0)``.
+        canvas_h, canvas_w: Padded canvas size (multiples of ``tile_h``, ``tile_w``).
+    """
+    B, N, C, th, tw = tiles.shape
+    if th != tile_h or tw != tile_w:
+        raise ValueError(
+            f"tile spatial shape ({th}, {tw}) != ({tile_h}, {tile_w})"
+        )
+    out = tiles.new_zeros((B, C, canvas_h, canvas_w))
+    k = 0
+    for y0 in range(0, canvas_h, tile_h):
+        for x0 in range(0, canvas_w, tile_w):
+            out[:, :, y0 : y0 + tile_h, x0 : x0 + tile_w] = tiles[:, k, :, :, :]
+            k += 1
+    if k != N:
+        raise ValueError(
+            f"tile count N={N} does not match canvas grid "
+            f"{canvas_h // tile_h}x{canvas_w // tile_w}={k}"
+        )
+    return out
+
+
 def tiled_eval_layout_tensors(
     orig_h: int, orig_w: int, ph: int, pw: int
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

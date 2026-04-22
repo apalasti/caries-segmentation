@@ -8,13 +8,39 @@ from pytorch_lightning.loggers import WandbLogger
 import wandb
 import matplotlib.pyplot as plt
 import seaborn as sns
-import wandb
 from .unet import UNet
+from ..data.cropping import padded_canvas_hw, stitch_tiles
 from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff
 from ..utils.focal_loss import FocalLoss
 
 
 LOGGED_IXS = np.array([0, 1, 2], dtype=np.int32)
+
+
+def _stitch_batch_if_tiled(
+    preds: torch.Tensor,
+    images: torch.Tensor,
+    masks: torch.Tensor,
+    layout: tuple[int, int, int, int],
+    data_cfg: dict,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """``layout`` is ``(B, N, th, tw)``; tensors are flat ``(B*N, …, th, tw)``."""
+    B, N, th, tw = layout
+    sz = data_cfg["images_size"]
+    oh, ow = int(sz[0]), int(sz[1])
+    ph = int(data_cfg["patch_size"])
+    ch, cw = padded_canvas_hw(oh, ow, ph, ph)
+    c_out = preds.shape[1]
+    ci = images.shape[1]
+    cm = masks.shape[1]
+    pt = preds.view(B, N, c_out, th, tw)
+    pi = images.view(B, N, ci, th, tw)
+    pm = masks.view(B, N, cm, th, tw)
+    return (
+        stitch_tiles(pt, ch, cw, th, tw)[:, :, :oh, :ow],
+        stitch_tiles(pi, ch, cw, th, tw)[:, :, :oh, :ow],
+        stitch_tiles(pm, ch, cw, th, tw)[:, :, :oh, :ow],
+    )
 
 
 def _normalize_bce_pos_weight(value):
@@ -140,12 +166,17 @@ class SegmentationLightningModule(pl.LightningModule):
         if not isinstance(self.logger, WandbLogger):
             return
 
-        images_np = images[LOGGED_IXS, 0].cpu().numpy()
-        masks_np = masks[LOGGED_IXS, 0].cpu().numpy()
-        preds_np = torch.sigmoid(preds[LOGGED_IXS, 0]).detach().cpu().numpy()
+        n = images.shape[0]
+        ixs = LOGGED_IXS[LOGGED_IXS < n]
+        if ixs.size == 0:
+            return
+
+        images_np = images[ixs, 0].cpu().numpy()
+        masks_np = masks[ixs, 0].cpu().numpy()
+        preds_np = torch.sigmoid(preds[ixs, 0]).detach().cpu().numpy()
 
         wandb_images = []
-        for i, idx in enumerate(LOGGED_IXS):
+        for i, idx in enumerate(ixs):
             img = images_np[i]
             mask = masks_np[i]
             pred = preds_np[i]
@@ -227,12 +258,19 @@ class SegmentationLightningModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
+        tile_layout: tuple[int, int, int, int] | None = None
         if images.ndim == 5:
             B, N, C, W, H = images.shape
+            tile_layout = (B, N, W, H)
             images = images.reshape(B*N, C, W, H)
             masks = masks.reshape(B*N, C, W, H)
 
         preds = self(images)
+        if tile_layout is not None:
+            preds, images, masks = _stitch_batch_if_tiled(
+                preds, images, masks, tile_layout, self.hparams["data"]
+            )
+
         loss, parts, *_ = self._compute_loss(preds, masks)
         iou = iou_coeff(preds, masks)
         dice_score = dice_coeff(preds, masks)
@@ -262,12 +300,19 @@ class SegmentationLightningModule(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
+        tile_layout: tuple[int, int, int, int] | None = None
         if images.ndim == 5:
             B, N, C, W, H = images.shape
+            tile_layout = (B, N, W, H)
             images = images.reshape(B*N, C, W, H)
             masks = masks.reshape(B*N, C, W, H)
 
         logits = self(images)
+        if tile_layout is not None:
+            logits, images, masks = _stitch_batch_if_tiled(
+                logits, images, masks, tile_layout, self.hparams["data"]
+            )
+
         loss, parts, *_ = self._compute_loss(logits, masks)
         probs = torch.sigmoid(logits)
         preds_bin = (probs > 0.5).int()
