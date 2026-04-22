@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import numpy as np
+from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import matplotlib.pyplot as plt
@@ -250,18 +251,13 @@ class SegmentationLightningModule(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         images, masks = batch
-        preds = self(images)
-        loss, parts, *_ = self._compute_loss(preds, masks)
-
-        preds = torch.sigmoid(preds)
-
-        preds_bin = (preds > 0.5).int()
+        logits = self(images)
+        loss, parts, *_ = self._compute_loss(logits, masks)
+        probs = torch.sigmoid(logits)
+        preds_bin = (probs > 0.5).int()
 
         self.test_preds.append(preds_bin.cpu())
         self.test_targets.append(masks.int().cpu())
-
-        loss = self._compute_loss(preds, masks)
-        dice = dice_coeff(preds, masks)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         for name, val in parts.items():
@@ -273,17 +269,12 @@ class SegmentationLightningModule(pl.LightningModule):
                 prog_bar=(name == "dice"),
             )
 
-        dice = parts.get(
-            "dice", torch.tensor(0.0, device=loss.device, dtype=loss.dtype)
-        )
-        self.log(
-            "test/dice",
-            dice_coeff(preds, masks),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-        )
-        return {"test_loss": loss, "test_dice_loss": dice}
+        iou = iou_coeff(logits, masks)
+        dice_score = dice_coeff(logits, masks)
+        self.log("test/iou", iou, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/dice", dice_score, on_step=False, on_epoch=True, prog_bar=True)
+
+        return {"test_loss": loss, "test_iou": iou, "test_dice": dice_score}
 
     def configure_optimizers(self):  # type: ignore[override]
         optimizer = torch.optim.AdamW(
@@ -307,8 +298,11 @@ class SegmentationLightningModule(pl.LightningModule):
     def model_instance(self):
         return self.model
 
-    def on_test_epoch_end(self):
+    def on_test_start(self):
+        self.test_preds.clear()
+        self.test_targets.clear()
 
+    def on_test_epoch_end(self):
         preds = torch.cat(self.test_preds).view(-1)
         targets = torch.cat(self.test_targets).view(-1)
 
@@ -319,8 +313,6 @@ class SegmentationLightningModule(pl.LightningModule):
 
         cm = [[TN, FP],
               [FN, TP]]
-
-
 
         plt.figure(figsize=(5, 5))
         sns.heatmap(
@@ -336,8 +328,9 @@ class SegmentationLightningModule(pl.LightningModule):
         plt.ylabel("Ground Truth")
         plt.title("Confusion Matrix")
 
-        plt.savefig("confusion_matrix.png")
+        output_dir = Path(self.hparams.get("training", {}).get("output_dir", "."))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_dir / "confusion_matrix.png")
         plt.close()
 
-
-        #wandb.log({"confusion_matrix": wandb.Image("confusion_matrix.png")})
+        # wandb.log({"confusion_matrix": wandb.Image("confusion_matrix.png")})

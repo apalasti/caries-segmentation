@@ -49,6 +49,7 @@ def train():
     model = SegmentationLightningModule(config)
 
     callbacks = []
+    checkpoint_callback = None
 
     if config["training"].get("checkpointing", True) and 0 < config["training"].get(
         "limit_val_batches", 1
@@ -100,6 +101,12 @@ def train():
     )
 
     trainer.fit(model, datamodule=data_module)
+
+    if checkpoint_callback is not None:
+        trainer.test(datamodule=data_module, ckpt_path="best")
+    else:
+        # Fall back to last in-memory weights when no val-based checkpoint exists.
+        trainer.test(model=model, datamodule=data_module)
 
     save_dir = Path(__file__).parent.parent / "docs/typst/figures/training"
     plot_training_curves({
