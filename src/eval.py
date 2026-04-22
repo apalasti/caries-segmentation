@@ -1,13 +1,15 @@
 import pytorch_lightning as pl
+import pathlib
 from pytorch_lightning.loggers import WandbLogger
 
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
 from .train_tooth_detection_model import evaluate_from_config as evaluate_tooth_detection_from_config
+from .train_end2end import evaluate_from_config as evaluate_end2end_from_config
 
 
-def evaluate_segmentation(config):
+def evaluate_segmentation(config, checkpoint_path: str | None = None):
 
     wandb_logger = WandbLogger(
         project=config["wandb"]["project"],
@@ -17,10 +19,9 @@ def evaluate_segmentation(config):
     data_module = SegmentationDataModule(config)
     data_module.setup("test")
 
-    model = SegmentationLightningModule(config)
-
-    best_model_path = f"{config['training']['output_dir']}/best_model.ckpt"
-    model = model.load_from_checkpoint(best_model_path, config=config)
+    if checkpoint_path is None:
+        checkpoint_path = str(pathlib.Path(config["training"]["output_dir"]) / "best_model.ckpt")
+    model = SegmentationLightningModule.load_from_checkpoint(checkpoint_path, config=config)
 
     trainer = pl.Trainer(
         accelerator="auto",
@@ -39,18 +40,40 @@ def evaluate():
     config = load_config()
     task = config.get("training", {}).get("task", "segmentation")
 
-    if task in {"segmentation", "unet_with_yolo_boxes"}:
-        evaluate_segmentation(config)
+    if task == "segmentation":
+        ckpt = config.get("training", {}).get(
+            "segmentation_checkpoint",
+            str(pathlib.Path(config["training"]["output_dir"]) / "best_model.ckpt"),
+        )
+        evaluate_segmentation(config, checkpoint_path=ckpt)
         return
 
-    if task in {"tooth_detection", "detection", "yolo_unet_conjunction"}:
+    if task == "unet_with_yolo_boxes":
+        default_ckpt = pathlib.Path(config["training"]["output_dir"]) / "best_model_yolo_guided.ckpt"
+        fallback_ckpt = pathlib.Path(config["training"]["output_dir"]) / "best_model.ckpt"
+        ckpt = pathlib.Path(
+            config.get("training", {}).get("guided_checkpoint", str(default_ckpt))
+        )
+        if not ckpt.exists() and default_ckpt.exists():
+            ckpt = default_ckpt
+        if not ckpt.exists() and fallback_ckpt.exists():
+            ckpt = fallback_ckpt
+        evaluate_segmentation(config, checkpoint_path=str(ckpt))
+        return
+
+    if task in {"tooth_detection", "detection"}:
         metrics = evaluate_tooth_detection_from_config(config)
         print(f"Detection Test Results: {metrics}")
         return
 
+    if task in {"yolo_unet_conjunction", "end2end_joint"}:
+        metrics = evaluate_end2end_from_config(config)
+        print(f"End-to-end Test Results: {metrics}")
+        return
+
     raise ValueError(
         f"Unsupported training.task='{task}'. "
-        "Use one of: segmentation, tooth_detection, unet_with_yolo_boxes, yolo_unet_conjunction."
+        "Use one of: segmentation, tooth_detection, unet_with_yolo_boxes, yolo_unet_conjunction, end2end_joint."
     )
 
 

@@ -14,6 +14,7 @@ from .train_tooth_detection_model import train_from_config as train_tooth_detect
 from .train_tooth_detection_model import (
     train_unet_with_yolo_boxes_from_config,
 )
+from .train_end2end import train_from_config as train_end2end_from_config
 
 
 def train_segmentation(config):
@@ -55,8 +56,6 @@ def train_segmentation(config):
 
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
-        limit_train_batches=1,
-        limit_val_batches=1,
         log_every_n_steps=1,
         accelerator="auto",
         devices="auto",
@@ -82,13 +81,17 @@ def train():
         train_tooth_detection_from_config(config)
         return
 
-    if task in {"unet_with_yolo_boxes", "yolo_unet_conjunction"}:
+    if task == "unet_with_yolo_boxes":
         train_unet_with_yolo_boxes_from_config(config)
+        return
+
+    if task in {"yolo_unet_conjunction", "end2end_joint"}:
+        train_end2end_from_config(config)
         return
 
     raise ValueError(
         f"Unsupported training.task='{task}'. "
-        "Use one of: segmentation, tooth_detection, unet_with_yolo_boxes, yolo_unet_conjunction."
+        "Use one of: segmentation, tooth_detection, unet_with_yolo_boxes, yolo_unet_conjunction, end2end_joint."
     )
 
 

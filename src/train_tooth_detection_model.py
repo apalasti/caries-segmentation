@@ -1,5 +1,6 @@
 import argparse
 import pathlib
+import re
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import pytorch_lightning as pl
@@ -15,6 +16,7 @@ from .data.dataset import load_split_pairs
 from .models.lightning_model import SegmentationLightningModule
 from .models.bbox.yolo import YOLOv5
 from .models.bbox.yolo_unet_conjunction import YOLOUNetConjunction
+from .models.unet import UNet
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -220,6 +222,58 @@ def _parse_anchors(raw_anchors: Any) -> Optional[Sequence[Tuple[float, float]]]:
         if w > 0 and h > 0:
             anchors.append((w, h))
     return anchors if anchors else None
+
+
+def _load_unet_segmenter(config: Dict[str, Any], checkpoint: pathlib.Path) -> torch.nn.Module:
+    if checkpoint.suffix.lower() == ".ckpt":
+        unet_module = SegmentationLightningModule.load_from_checkpoint(
+            str(checkpoint),
+            config=config,
+        )
+        unet_module.eval()
+        return unet_module.model_instance
+
+    state = torch.load(checkpoint, map_location="cpu")
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
+    if not isinstance(state, dict):
+        raise ValueError(f"Unsupported UNet checkpoint format at {checkpoint}")
+
+    normalized_state: Dict[str, torch.Tensor] = {}
+    max_legacy_down = 0
+    for key, value in state.items():
+        clean_key = key[6:] if key.startswith("model.") else key
+
+        m_down = re.match(r"^down(\d+)\.(.+)$", clean_key)
+        if m_down:
+            down_idx = int(m_down.group(1)) - 1
+            max_legacy_down = max(max_legacy_down, down_idx + 1)
+            clean_key = f"downs.{down_idx}.{m_down.group(2)}"
+
+        m_up = re.match(r"^up(\d+)\.(.+)$", clean_key)
+        if m_up:
+            up_idx = int(m_up.group(1)) - 1
+            clean_key = f"ups.{up_idx}.{m_up.group(2)}"
+
+        m_up_conv = re.match(r"^up_conv(\d+)\.(.+)$", clean_key)
+        if m_up_conv:
+            up_conv_idx = int(m_up_conv.group(1)) - 1
+            clean_key = f"up_convs.{up_conv_idx}.{m_up_conv.group(2)}"
+
+        normalized_state[clean_key] = value
+
+    model_cfg = config.get("model", {})
+    inferred_depth = max_legacy_down + 1 if max_legacy_down > 0 else None
+    segmenter = UNet(
+        n_channels=int(model_cfg.get("n_channels", 1)),
+        n_classes=int(model_cfg.get("n_classes", 1)),
+        depth=int(inferred_depth or model_cfg.get("depth", 4)),
+        base_channels=int(model_cfg.get("base_channels", 64)),
+    )
+
+    segmenter.load_state_dict(normalized_state, strict=True)
+    segmenter.eval()
+    return segmenter
 
 
 def build_detector_model(
@@ -447,8 +501,8 @@ def train_unet_with_yolo_boxes(
             ModelCheckpoint(
                 dirpath=str(output_dir),
                 filename="best_model_yolo_guided",
-                monitor="val/dice_loss",
-                mode="min",
+                monitor="val/dice",
+                mode="max",
                 save_top_k=1,
                 verbose=True,
             )
@@ -456,9 +510,9 @@ def train_unet_with_yolo_boxes(
     if training_cfg.get("early_stopping", True):
         callbacks.append(
             EarlyStopping(
-                monitor="val/dice_loss",
+                monitor="val/dice",
                 patience=int(training_cfg.get("early_stopping_patience", 10)),
-                mode="min",
+                mode="max",
                 verbose=True,
             )
         )
@@ -714,11 +768,7 @@ def evaluate_from_config(config: Dict[str, Any]) -> Dict[str, float]:
         if not checkpoint.exists():
             raise FileNotFoundError(f"UNet checkpoint not found: {checkpoint}")
 
-        unet_module = SegmentationLightningModule.load_from_checkpoint(
-            str(checkpoint),
-            config=config,
-        )
-        unet_module.eval()
+        segmenter_model = _load_unet_segmenter(config, checkpoint)
 
         unet_input_size = config.get("data", {}).get("images_size", [256, 256])
         conjunction_model = YOLOUNetConjunction(
@@ -729,7 +779,7 @@ def evaluate_from_config(config: Dict[str, Any]) -> Dict[str, float]:
                 nms_iou_threshold=nms_iou_threshold,
                 max_detections=max_detections,
             ),
-            segmenter=unet_module.model_instance,
+            segmenter=segmenter_model,
             unet_input_size=(int(unet_input_size[0]), int(unet_input_size[1])),
             mask_threshold=float(detection_cfg.get("unet_mask_threshold", 0.5)),
             crop_padding_ratio=float(detection_cfg.get("unet_crop_padding", 0.05)),

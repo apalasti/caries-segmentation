@@ -1,0 +1,64 @@
+[project]
+name = "caries-segmentation"
+
+[data]
+preprocessed_path = "data/preprocessed"
+sources = []
+images_size = [256, 256]
+
+[model]
+n_channels = 1
+n_classes = 1
+depth = 4
+base_channels = 64
+
+[training]
+task = "tooth_detection"
+epochs = 20
+batch_size = 8
+learning_rate = 5e-4
+weight_decay = 1e-5
+num_workers = 2
+output_dir = "checkpoints"
+seed = 42
+shuffle_train = true
+
+early_stopping = false
+early_stopping_patience = 10
+checkpointing = true
+lr_scheduler = false
+
+[tooth_detection]
+data_dir = "data/preprocessed_detection"
+output_dir = "checkpoints/runs/method1_detector"
+device = "auto"
+image_size = 640
+anchors = [[10.0, 13.0], [16.0, 30.0], [33.0, 23.0], [30.0, 61.0], [62.0, 45.0], [59.0, 119.0]]
+max_detections = 32
+nms_iou_threshold = 0.55
+eval_split = "test"
+score_threshold = 0.22
+eval_iou_threshold = 0.5
+detector_checkpoint = "checkpoints/runs/method1_detector/detector_best.pt"
+use_unet_conjunction = false
+unet_checkpoint = "checkpoints/runs/method1_guided/best_model_yolo_guided.ckpt"
+unet_mask_threshold = 0.5
+unet_crop_padding = 0.05
+
+[end2end]
+output_dir = "checkpoints/runs/method2_end2end"
+checkpoint = "checkpoints/runs/method2_end2end/end2end_best.pt"
+device = "auto"
+train_with_gt_boxes_prob = 0.5
+segmenter_in_channels = 1
+unet_input_size = [256, 256]
+mask_threshold = 0.5
+crop_padding_ratio = 0.05
+min_crop_size = 2
+bbox_padding = 10.0
+save_sanity_report = true
+sanity_report_path = "outputs/end2end_sanity_test.json"
+
+[wandb]
+project = "caries-segmentation"
+entity = ""
