@@ -4,7 +4,16 @@ name = "caries-segmentation"
 [data]
 preprocessed_path = "data/preprocessed"
 # sources = ["DC1000"]  # Filter by source in data.csv, empty = all
-images_size = [256, 256]
+
+# Resize canvas before cropping; each dimension must be >= patch_size when patch training is on.
+images_size = [640, 640]
+
+# Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
+# When set, val/test use a non-overlapping tile grid on the resized canvas and metrics run on stitched full images.
+patch_size = 128
+
+# Train only: probability of mask-focused crop vs uniform random crop (empty mask falls back to random).
+focused_crop_prob = 0.8
 
 [model]
 n_channels = 1

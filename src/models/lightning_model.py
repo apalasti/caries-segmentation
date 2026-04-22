@@ -1,3 +1,4 @@
+from typing import cast
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
@@ -177,7 +178,12 @@ class SegmentationLightningModule(pl.LightningModule):
         self.log("grad_norm", total_norm, on_step=True, on_epoch=False, prog_bar=False)
 
     def training_step(self, batch, batch_idx):
-        images, masks = batch
+        images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
+        if images.ndim == 5:
+            B, N, C, W, H = images.shape
+            images = images.reshape(B*N, C, W, H)
+            masks = masks.reshape(B*N, C, W, H)
+
         preds = self(images)
         loss, parts, bce_mult, focal_mult = self._compute_loss(preds, masks)
 
@@ -220,7 +226,12 @@ class SegmentationLightningModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        images, masks = batch
+        images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
+        if images.ndim == 5:
+            B, N, C, W, H = images.shape
+            images = images.reshape(B*N, C, W, H)
+            masks = masks.reshape(B*N, C, W, H)
+
         preds = self(images)
         loss, parts, *_ = self._compute_loss(preds, masks)
         iou = iou_coeff(preds, masks)
@@ -250,7 +261,12 @@ class SegmentationLightningModule(pl.LightningModule):
         return {"val_loss": loss, "val_iou": iou, "val_dice": dice_score}
 
     def test_step(self, batch, batch_idx):
-        images, masks = batch
+        images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
+        if images.ndim == 5:
+            B, N, C, W, H = images.shape
+            images = images.reshape(B*N, C, W, H)
+            masks = masks.reshape(B*N, C, W, H)
+
         logits = self(images)
         loss, parts, *_ = self._compute_loss(logits, masks)
         probs = torch.sigmoid(logits)

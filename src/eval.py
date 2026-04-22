@@ -45,7 +45,7 @@ def evaluate(max_samples=5, threshold=0.5):
 
     # Mappák létrehozása
     save_dir = Path(__file__).parent.parent / "docs/typst/figures/evaluation"
-    print("saving eval to ",save_dir)
+    print("saving eval to ", save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
     samples = sample_test_predictions(model, data_module.test_dataloader(), max_samples=max_samples, device=device)
