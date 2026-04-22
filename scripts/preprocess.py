@@ -2,7 +2,7 @@ import hashlib
 import pathlib
 import shutil
 from itertools import chain
-
+from pathlib import Path
 import pandas as pd
 from PIL import Image, ImageDraw
 from tqdm import tqdm
@@ -13,13 +13,36 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 PREPROCESSED_DIR = DATA_DIR / "preprocessed"
 
 
-def get_dc1000_mask_path(image_path: pathlib.Path) -> pathlib.Path:
-    return pathlib.Path(
-        str(image_path)
-            .replace("org_test_dataset/images", "org_test_dataset/colors")
-            .replace("org_train_dataset/images", "org_train_dataset/colors_clean")
-    )
+def get_dc1000_mask_path(image_path: Path) -> Path:
+    """
+    Returns the corresponding DC1000 mask path for a given image path.
+    Works for both Windows and Unix paths.
+    """
 
+    # Convert to absolute Path to be safe
+    image_path = image_path.resolve()
+
+    parts = image_path.parts  # tuple of path components
+
+    # Determine new subfolder for masks
+    if "org_train_dataset" in parts:
+        # Replace 'images' with 'colors_clean' in train dataset
+        new_parts = list(parts)
+        images_idx = new_parts.index("images")
+        new_parts[images_idx] = "colors_clean"
+        mask_path = Path(*new_parts)
+
+    elif "org_test_dataset" in parts:
+        # Replace 'images' with 'colors' in test dataset
+        new_parts = list(parts)
+        images_idx = new_parts.index("images")
+        new_parts[images_idx] = "colors"
+        mask_path = Path(*new_parts)
+
+    else:
+        raise ValueError(f"Unrecognized dataset path: {image_path}")
+
+    return mask_path
 
 def get_roboflow_label_path(image_path: pathlib.Path) -> pathlib.Path:
     if image_path.parent.name != "images":

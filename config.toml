@@ -9,7 +9,7 @@ images_size = [256, 256]
 [model]
 n_channels = 1
 n_classes = 1
-depth = 4
+depth = 1
 base_channels = 64
 dropout = 0.2
 
