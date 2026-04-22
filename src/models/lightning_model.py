@@ -346,7 +346,5 @@ class SegmentationLightningModule(pl.LightningModule):
 
         output_dir = Path(self.hparams.get("training", {}).get("output_dir", "."))
         output_dir.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_dir / "confusion_matrix.png")
+        plt.savefig(output_dir / f"{self.logger.name}_confusion_matrix.png")
         plt.close()
-
-        # wandb.log({"confusion_matrix": wandb.Image("confusion_matrix.png")})

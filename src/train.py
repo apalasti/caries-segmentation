@@ -1,5 +1,5 @@
 import os
-import pandas as pd
+
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
@@ -14,7 +14,8 @@ from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
 from .utils.visualization import plot_training_curves
 from .utils.callbacks import MetricsHistoryCallback
-from pathlib import Path
+
+
 def train():
     config = load_config()
 
@@ -108,13 +109,15 @@ def train():
         # Fall back to last in-memory weights when no val-based checkpoint exists.
         trainer.test(model=model, datamodule=data_module)
 
-    save_dir = Path(__file__).parent.parent / "docs/typst/figures/training"
-    plot_training_curves({
-        "train_loss": metrics_cb.train_loss,
-        "val_loss": metrics_cb.val_loss,
-       # "val_dice": metrics_cb.val_dice,
-       #"val_iou": metrics_cb.val_iou,
-    }, save_dir=str(save_dir))
+    plot_training_curves(
+        {
+            "train_loss": metrics_cb.train_loss,
+            "val_loss": metrics_cb.val_loss,
+            # "val_dice": metrics_cb.val_dice,
+            # "val_iou": metrics_cb.val_iou,
+        },
+        save_dir=config["training"]["output_dir"],
+    )
 
     if isinstance(logger, WandbLogger):
         logger.experiment.finish()
