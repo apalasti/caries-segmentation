@@ -116,7 +116,7 @@ def train():
             # "val_dice": metrics_cb.val_dice,
             # "val_iou": metrics_cb.val_iou,
         },
-        save_dir=config["training"]["output_dir"],
+        save_path=os.path.join(config["training"]["output_dir"], f"{logger.name}_curves.png"),
     )
 
     if isinstance(logger, WandbLogger):
