@@ -208,61 +208,7 @@ Az alábbi két ábra a Roboflow és a DC1000 adathalmazból származó képek a
   caption: [Példák a DC1000 adathalmazból az eredeti, maszkolt, illetve átfedésre (overlay)]
 )
 
-== Pixeleloszlás vizsgálata
 
-Az egyes osztályok pixeleloszlását az alábbi ábrák mutatják a különböző adathalmaz részekben. Megfigyelhető, hogy az osztályok aránya nem teljesen kiegyensúlyozott, ami hatással lehet a modell tanulására.
-
-
-#figure(
-  grid(
-    columns: 3,
-    gutter: 10pt,
-
-    [
-      #image("./figures/dataset_introduction/class_ratio_train.png", width: 100%)
-    ],
-
-    [
-      #image("./figures/dataset_introduction/class_ratio_val.png", width: 100%)
-    ],
-
-    [
-      #image("./figures/dataset_introduction/class_ratio_test.png", width: 100%)
-    ],
-  ),
-  caption: [Az osztályeloszlás összehasonlítása a tanító, validációs és teszt halmazokban.]
-)
-
-
-/*== Adat augmentáció vizualizáció ezt elhagyjuk mivel ugyis random*/
-
-
-== Modell predikció vizualizáció
-
-#figure(
-  image("./figures/evaluation/confusion_matrix.png", width: 100%),
-  caption: [Konfúziós mátrix.]
-)
-
-A tanító, validációs és teszt halmazokra vonatkozó osztályeloszlás ábrák bemutatják, hogy a szuvas és nem szuvas pixelek aránya nem teljesen kiegyensúlyozott.
-#figure(
-  image("./figures/evaluation/sample_1.png", width: 100%),
-  caption: [Egy példa a modell predikciójára.]
-)
-== Tanulási görbék
-
-A tanulási görbék ábrázolják a modell veszteség- és pontossági metrikáinak változását az epoch-ok  során  tanító illetve  validációs adathalmazon.
-#figure(
-  image("./figures/training/training_curves.png", width: 100%),
-  caption: [Tanulási görbék]
-)
-== Teljesítmény metrikák
-
-A konfúziós mátrix és a különböző teljesítménymutatók oszlopdiagramja összefoglaló képet ad a modell végső pontosságáról, a false positive és false negative hibákról, valamint a Dice, IoU, precision és recall értékekről.
-#figure(
-  image("./figures/evaluation/metrics_barplot.png", width: 100%),
-  caption: [Teljesítménymutatók oszlopdiagramon.]
-)
 
 
 
@@ -272,7 +218,7 @@ A tanító adatokon *online augmentációt* alkalmazunk: a minták betöltéseko
 minden alkalommal (epochonként és batch-enként) véletlenszerűen transzformáljuk a
 képet és a hozzá tartozó szegmentációs maszkot, hogy a hálózat nagyobb
 változatosságot lásson. Az implementáció az `Albumentations` könyvtárra épül, a
-lépések egy összefűzött láncban futnak, előre rögzített sorrendben. 
+lépések egy összefűzött láncban futnak, előre rögzített sorrendben.
 
 + *Vízszintes tükrözés*: bal-jobb tükrözés; a maszk ugyanazzal a geometriával transzformálódik, mint a kép
 + *Véletlenszerű méretarány*: tisztán geometriai változatosságot ad (eltolás és forgatás nélkül)
@@ -355,6 +301,9 @@ Annak érdekében, hogy a transzformáció során a hálózat feleslegesen ne cs
 
 A kódoló szakaszban a térbeli redukciót mindig hálózaton kívüli, exkluzív $2 times 2$-es Max Pooling réteg végzi (ahol a lépésköz is 2), ami rendre megfelezi a felépített reprezentációk felbontását. A dekódoló ág feladata ennek ellentéte, a térbeli dimenziók visszaállítása transzponált konvolúciók (`ConvTranspose2d`) segítségével ($2 times 2$-es kernel, $2$-es stride kíséretében).
 
+
+
+
 ==== Batch Normalization
 
 Minden konvolúciós műveletet a PyTorch `BatchNorm2d` rétege követi a
@@ -390,7 +339,7 @@ A detektor kimeneti csatornaszáma a következő:
 
 $ C_"out" = A * (5 + C) $
 
-ahol $A$ az anchorok száma, $C$ pedig az osztályok száma. A képletben szereplő $5$ a YOLO doboz-leírás fix komponenseit jelenti: $(x, y, w, h)$ koordinátaparaméterek + objektumossági pontszám (objectness) @redmon2016yolo.
+ahol $A$ az anchorok száma, $C$ pedig az osztályok száma. A képletben szereplő $5$ a YOLO doboz-leírás fix komponenseit jelenti: $(x, y, w, h)$ koordinátaparaméterek + objektumossági pontszám ("obj"ectness) @redmon2016yolo.
 \
 \
 A jelenlegi implementációban nem használunk közös, end-to-end kombinált
@@ -406,6 +355,347 @@ Az új architekturális elem a *YOLO + U-Net konjunkciós blokk*:
 - a bináris maszkot visszavetítjük az eredeti képre és régiónként egyesítjük.
 
 Ezzel a felépítéssel a YOLO biztosítja a gyors régió-jelölést, míg az U-Net a pixelek szintjén pontosítja a szuvas területek határát.
+
+  = Gépi tanulás modell bemutatás
+
+=== Kombinált veszteségfüggvény
+
+A szegmentációs modell tanítása során egy kombinált veszteségfüggvényt alkalmazunk, amely két komponenst tartalmaz: a bináris keresztentrópia ("BCE") veszteséget és a Dice-alapú átfedési veszteséget.
+
+A teljes veszteség:
+
+$
+L = L_"BCE" + L_"Dice"
+$
+
+ahol: $L_"BCE"$: pixel-szintű bináris keresztentrópia veszteség, $L_"Dice"$: átfedés-alapú Dice veszteség
+
+==== Bináris keresztentrópia veszteség
+
+A "BCE" veszteség a logit-alapú előrejelzések és a ground truth maszkok közötti különbséget méri:
+
+$
+L_"BCE" = "BCEWithLogits"(p, y)
+$
+
+ahol:  $p$: a hálózat logit kimenete, $y$: bináris ground truth maszk.
+
+==== Dice veszteség
+
+A Dice veszteség az átfedés minőségét méri:
+
+$
+L_"Dice" = 1 - frac(2 * |P ∩ Y|, |P| + |Y|)
+$
+
+ahol: $P$: predikált maszk $Y$: ground truth maszk
+
+==== Összesített veszteség
+
+A két komponens összege:
+
+$
+L = "BCEWithLogits"(p, y) + L_"Dice"(p, y)
+$
+
+==== Súlyozás
+Az alábbi képlet mutatja hogyan történik a dice loss súlyozása.
+$
+L_"Dice"^"weighted" = sum_i w_i * L_"Dice"^(i)
+$
+ahol a $w_i$ súlyok az egyes osztályok fontosságát
+szabályozzák.
+
+=== Tanulási ráta ütemezés (Learning Rate Scheduler)
+
+A modell tanítása során adaptív tanulási ráta ütemezést alkalmazunk a konvergencia stabilizálása érdekében. A használt stratégia a "ReduceLROnPlateau" scheduler, amely a validációs teljesítmény alapján csökkenti a tanulási rátát.
+
+A scheduler a következő metrikát figyeli:
+
+$
+m = "val/dice"
+$
+
+amely a validációs Dice pontszámot jelöli.
+
+=== Működési elv
+
+Amennyiben a figyelt metrika nem javul egy adott számú epoch-on keresztül, a tanulási ráta csökkentésre kerül:
+
+$
+lr = lr * gamma
+$
+
+ahol:
+- $gamma = 0.5$: csökkentési faktor
+- $"patience" = 5$: türelmi periódus epochokban
+
+=== Intuíció
+
+A scheduler célja, hogy:
+- gyors kezdeti tanulást biztosítson magas tanulási rátával
+- majd finomhangolást végezzen kisebb tanulási rátával
+- elkerülje a lokális minimumokban való beragadást
+
+=== Formális feltétel
+
+A tanulási ráta csökkentése akkor történik, ha:
+
+$
+m_t <= max(m_{t-"patience"}, ..., m_{t-1})
+$
+
+azaz a metrika nem mutat javulást a megadott türelmi ablakban.
+
+=== Implementációs megjegyzés
+
+A scheduler epoch végén frissül, és a validációs Dice pontszám alapján kerül meghívásra:
+
+- monitor: "val/dice"
+- mode: "max"
+- interval: epoch
+
+//todo ide kod + elozo fejezet alapjan leirni a vegleges modell felepitest, mukodest
+A teszt adathalmazon kiértékeltük a kétfázisú modellt (Yolo+U-net), illetve a baseline U-net modellt is.
+A baseline U-Net modell esetében a bemeneti képek felbontása 256 × 256 pixel, az előfeldolgozott adatok a data/preprocessed könyvtárból származnak.
+
+Adataugmentáció: a tanítás során fényerő- és kontrasztmódosítást alkalmaztunk (p = 0.5, ±0.1 tartomány), rugalmas deformációt (p = 0.3, α = 30, σ = 5), horizontális tükrözést (p = 0.5), skálázást (p = 0.5, ±20%), valamint fókuszált kivágást (p = 0.8).
+
+Modell: a szegmentációhoz U-Net architektúrát használtunk, 64 kezdő csatornával és 4 szint mélységgel. A háló dropout regularizációt alkalmaz (p = 0.2). A bemenet egysávos (1 csatorna), a kimenet bináris maszk (1 csatorna).
+
+Tanítás: a modellt 500 epochon keresztül tanítottuk, 64-es batch mérettel. Optimalizálóként AdamW optimizer-t alkalmaztunk, 1 × 10⁻⁴ kezdeti tanulási rátával, amely a tanítás során 6.25 × 10⁻⁶ értékre csökkent. A modell 180 epoch után stabil konvergenciát mutatott (gradiens norma ≈ 1.10).
+
+Veszteségfüggvény: a tanítás során kombinált Dice és Focal veszteséget alkalmaztunk, kiegészítve egy kisebb súlyú bináris keresztentrópia (BCE) komponenssel. A Focal loss paraméterei α = 0.85 és γ = 2, súlya 0.8, míg a BCE komponens súlya 0.1, amely fokozatosan került bevezetésre az első 50 epoch során. A tanítás végére a teljes veszteség 0.373 értéket vett fel (Dice loss: 0.368, Focal loss: 0.0049).
+
+= YOLO-alapú objektumdetektáló modell működése
+
+A *YOLO (You Only Look Once)* egy egyfázisú (single-stage) objektumdetektáló architektúra, amely egyetlen neurális hálózati előrecsatolás során végzi el mind az objektumok lokalizációját, mind azok osztályozását. A modell a bemeneti képet egy rácsra bontja, és minden rácspontban több előre definiált *anchor box* segítségével becsli meg az objektumok jelenlétét.
+
+== Alapötlet
+
+Legyen a bemenet egy $I in bb(R)^ "H x W x 3"$ kép.
+A hálózat egy $S times S$ felbontású rácson dolgozik, ahol minden rácscella $A$ darab anchor boxhoz rendel predikciókat.
+
+ahol:
+
+- $(x, y)$: doboz középpontja (offset a grid cellán belül)
+- $(w, h)$: szélesség és magasság
+- $p_"cls"$: objektum jelenlétének valószínűsége
+- $p_"cls"$: osztályvalószínűségek
+
+== Dekódolás
+
+A hálózat kimenete nem közvetlen koordinátákat ad, hanem transzformált értékeket:
+
+$
+x = (sigma(t_x) + c_x) * s_x
+$
+
+$
+y = (sigma(t_y) + c_y) * s_y
+$
+
+$
+w = exp(t_w) * a_w
+$
+
+$
+h = exp(t_h) * a_h
+$
+
+ahol:
+
+- $(c_x, c_y)$: grid cella koordinátái
+- $(a_w, a_h)$: anchor méretek
+- $(s_x, s_y)$: stride (képméret osztva rácsmérettel)
+- $sigma$: sigmoid függvény
+
+== objektum kiválasztás
+
+A végső pontszám:
+
+$
+"score" = p_"cls" * p_"cls"
+$
+
+A kiválasztás lépései:
+
+1. Küszöbölés: $"score" > tau_"conf"$
+2. Nem-maximális elnyomás (NMS):
+
+$
+"IoU"(b_i, b_j) > tau_"iou" => "eldobás"
+$
+
+== Veszteségfüggvény
+
+A teljes veszteség:
+
+$
+L = lambda_"box" * L_"box" + L_"cls" + L_"cls"
+$
+
+ahol:
+
+- box loss (Smooth L1):
+
+$
+L_{"box"} = "SmoothL1"(t_"pred", t_"target")
+$
+
+- objectness loss:
+
+$
+L_"cls" = "BCE"(p_"cls", y_"cls")
+$
+
+- Class loss:
+
+$
+L_"cls" = "BCE"(p_"cls", y_"cls")
+$
+
+== Implementáció paraméterezése
+
+A bemutatott modell egy kompakt YOLO-szerű architektúra.
+
+=== Alap paraméterek
+
+- `num_classes`: osztályok száma ($C$)
+- `anchors`: anchor box méretek $(w, h)$
+- `conf_threshold`: detekciós küszöb ($tau_"conf"$)
+- `iou_threshold`: NMS küszöb ($tau_"iou"$)
+- `max_detections`: maximum detektált objektum
+
+=== Architektúra
+
+==== Backbone
+
+Konvolúciós blokkok:
+
+- Conv2D + BatchNorm + SiLU
+- Stride növelés → felbontás csökkentése
+
+==== Head
+
+$
+"output_channels" = A * (5 + C)
+$
+
+ahol:
+
+- $A$: anchorok száma
+- $(x, y, w, h, "obj")$ → 5 paraméter
+- $C$: osztályok száma
+
+== Tensor dimenziók
+
+$
+(B, A * (5 + C), H, W) -> (B, A, H, W, 5 + C)
+$
+
+== Target hozzárendelés
+
+1. Középpont → grid cella $(g_x, g_y)$
+2. IoU számítás anchorokkal
+3. Legjobb anchor kiválasztása
+4. Target értékek:
+
+$
+t_x = x / s_x - g_x
+$
+
+$
+t_y = y / s_y - g_y
+$
+
+$
+t_w = log(w / a_w)
+$
+
+$
+t_h = log(h / a_h)
+$
+
+== Fontos implementációs részletek
+
+- Sigmoid aktiváció $(x, y)$ és confidence-re
+- Exponenciális skálázás $(w, h)$-re
+- Anchor-alapú regresszió
+- BCE loss többosztályos esetben
+- NMS redundancia csökkentésére
+
+#figure(
+  grid(
+    columns: 2,
+    gutter: 10pt,
+
+    [
+      #image("./figures/m4_phase/u-net_baseline_loss_curve.png", width: 100%)
+    ],
+
+    [
+      #image("./figures/m4_phase/u-net_baseline_loss_curve.png", width: 100%)
+    ]
+  ),
+  caption: [A U-net baseline (balra) modell illetve a kétfázisú modell (jobboldali) confusion mátrixai a teszt adathalmazon.]
+)
+
+#figure(
+  grid(
+    columns: 2,
+    gutter: 10pt,
+
+    [
+      #image("./figures/m4_phase/u-net_baseline_confusion_mtix.webp", width: 100%)
+    ],
+
+    [
+      #image("./figures/m4_phase/2phase_confusion_mtix.webp", width: 100%)
+    ]
+  ),
+  caption: [A U-net baseline (balra) modell illetve a kétfázisú modell (jobboldali) confusion mátrixai a teszt adathalmazon.]
+)
+
+#figure(
+  grid(
+    columns: 2,
+    gutter: 10pt,
+
+    [
+      #image("./figures/m4_phase/u-net_bare_baseline_results.webp", width: 100%)
+    ],
+
+    [
+      #image("./figures/m4_phase/2phase_results.webp", width: 100%)
+    ]
+  ),
+  caption: [A U-net baseline (balra) modell illetve a kétfázisú modell (jobboldali) által elért eredmények a teszt adathalmazon.]
+)
+
+//todo tovabba kellenek majd abrak a tanulasi gorbekrol meg a teljesitmeny metrikakrol, felsorolas szeruen adott beallitas milyen ertekeivel sikerult elerni pl. milyen lr, dropout,..stb illetve random kep a predikciora hogyan sikerult
+
+//todo  class imbalance pixelekrol boti bboxai alapjan ujrakalkulalni
+
+// todo yolo bboxokrol kepet berakni
+
+//todo adatviz terv alapjan lrean curvek, eredmenyek baseline + 2fazisura
+
+//todo egymas mellett legyenek majd baseline vs masik
+
+//todo legyen leirva mind2 esetben a parameter konfig konkret beallitasok kodbol amit hasznaltunk
+
+//todo yolo parametereit is leirni
+
+//yolonal lett tobb dataset
+
+
+  = Gépi tanulás modell értékelés terv
+
+A „YOLO és U-Net architektúra terv” fejezetben bemutatott modell kiértékelése több lépésben történik. Elsőként a modell U-Net komponensére hiperparaméter-optimalizálást (HPO) végzünk, amely során különböző paraméterkonfigurációk teljesítményét hasonlítjuk össze validációs adathalmazon.
+
+A kiválasztás alapját elsősorban a Dice-együttható képezi, mint szegmentációs teljesítménymutató. A legjobb validációs eredményt elérő konfiguráció kerül kiválasztásra, amelyet ezt követően a teszt adathalmazon értékelünk. A kétfázisú architektúra elért eredményeit összevetjük egy U-net baseline modellel, a baseline modell beállításai, keresési tere megegyezik a kétfázisú modell U-net fejével, csak ebben az esetben mellőzzük a Yolo háló használatát.
+
 
 
   = SOTA MODELLEK
