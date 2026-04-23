@@ -54,3 +54,7 @@ dist/
 .ipynb_checkpoints/
 *.pdf
 .typst_cache/
+Tooth-1/
+outputs/
+visualizations/
+vzrad2-6/
