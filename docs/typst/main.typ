@@ -289,6 +289,7 @@ Az új architekturális elem a *YOLO + U-Net konjunkciós blokk*:
 Ezzel a felépítéssel a YOLO biztosítja a gyors régió-jelölést, míg az U-Net a pixelek szintjén pontosítja a szuvas területek határát.
 
   = Gépi tanulás modell bemutatás
+== Implementációs részletek
 
 === Kombinált veszteségfüggvény
 
@@ -362,7 +363,8 @@ ahol:
 - $gamma = 0.5$: csökkentési faktor
 - $"patience" = 5$: türelmi periódus epochokban
 
-=== Intuíció
+
+
 
 A scheduler célja, hogy:
 - gyors kezdeti tanulást biztosítson magas tanulási rátával
@@ -389,7 +391,7 @@ A scheduler epoch végén frissül, és a validációs Dice pontszám alapján k
 
 //todo ide kod + elozo fejezet alapjan leirni a vegleges modell felepitest, mukodest
 
-= YOLO-alapú objektumdetektáló modell működése
+== YOLO-alapú objektumdetektáló modell működése
 
 A *YOLO (You Only Look Once)* egy egyfázisú (single-stage) objektumdetektáló architektúra, amely egyetlen neurális hálózati előrecsatolás során végzi el mind az objektumok lokalizációját, mind azok osztályozását. A modell a bemeneti képet egy rácsra bontja, és minden rácspontban több előre definiált *anchor box* segítségével becsli meg az objektumok jelenlétét.
 
@@ -510,13 +512,13 @@ ahol:
 - $(x, y, w, h, "obj")$ → 5 paraméter
 - $C$: osztályok száma
 
-== Tensor dimenziók
+=== Tensor dimenziók
 
 $
 (B, A * (5 + C), H, W) -> (B, A, H, W, 5 + C)
 $
 
-== Target hozzárendelés
+=== Target hozzárendelés
 
 1. Középpont → grid cella $(g_x, g_y)$
 2. IoU számítás anchorokkal
@@ -539,7 +541,7 @@ $
 t_h = log(h / a_h)
 $
 
-== Fontos implementációs részletek
+=== Fontos implementációs részletek
 
 - Sigmoid aktiváció $(x, y)$ és confidence-re
 - Exponenciális skálázás $(w, h)$-re
@@ -547,7 +549,7 @@ $
 - BCE loss többosztályos esetben
 - NMS redundancia csökkentésére
 
-=== Kezdetleges eredmények a kétfázisú illetve U-net baseline modllekre
+== Kezdetleges eredmények a kétfázisú illetve U-net baseline modllekre
 
 A teszt adathalmazon kiértékeltük a kétfázisú modellt (Yolo+U-net), illetve a baseline U-net modellt is.
 A *baseline U-Net modell* esetében a bemeneti képek felbontása 256 × 256 pixel, az előfeldolgozott adatok a data/preprocessed könyvtárból származnak.
