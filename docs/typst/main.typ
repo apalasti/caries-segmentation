@@ -63,16 +63,6 @@ Az alábbiakban bemutatjuk a választott DC1000 adathalmazt #cite(<wang2023multi
   - *Tartalom:* 6313 darab intraorális (szájüregen belüli) fotó.
   - *Annotációk:* Kifejezetten objektumdetektálásra felkészített adatbázis, amely YOLO, COCO és Pascal VOC formátumú határoló dobozokat (bounding boxes) tartalmaz, felgyorsítva a valós idejű modellek integrációját.
 */
-== Adatelőkészítési terv
-Az alábbiakban felsoroljuk azokat a lépéseket, amelyeket az adatok megfelelő előkészítése érdekében szükséges elvégezni:
-- Képek átméretezése
-- Normalizálás
-- Augmentálás (online, részletek: *Online Augmentáció* fejezet): 
-  + Véletlenszerű vízszintes tükrözés
-  + Véletlenszerű méretarány (`RandomScale`; eltolás és forgatás nélkül)
-  + Opcionális elastic deformáció (projekt `config.toml` szerint jelenleg kikapcsolva)
-  + Véletlenszerű fényerő- és kontrasztállítás
-- Adathalmaz felosztása tanító, teszt és validációs adathalmazra
 
 = Adatelőkészítés
 
@@ -104,64 +94,6 @@ lépések egy összefűzött láncban futnak, előre rögzített sorrendben.
 Validáción (és tipikusan teszten) nem használunk véletlen augmentációt: csak
 az átméretezés történik ugyanarra a célméretre.
 
-= Adatvizualizációs terv
-
-- *Adathalmaz bemutatása*
-  - *Cél:* bemutatni, hogy milyen képeken tanul a modell
-  - *Vizualizációk:*
-    - panoráma röntgen képek mintái: képrács (image grid)
-    - adathalmaz felosztása tanító, validációs és teszt adathalmazra: pie chart
-    - szuvas / nem szuvas pixelek aránya: pie chart
-
-
-- *Annotáció vizualizáció*
-  - *Cél:* megmutatni, hogy mit tanul a modell
-  - *Vizualizációk:*
-    - eredeti röntgen kép: image
-    - ground truth maszk: maszk kép
-    - overlay (maszk rárajzolva az eredeti képre): overlay image
-    - több példa összehasonlítása: képrács (original – mask – overlay)
-/*
-- *Pixeleloszlás vizsgálata*
-  - *Cél:* az osztályok közötti egyensúlytalanság vizsgálata
-  - *Vizualizációk:*
-    - szuvas pixelek száma képenként: histogram
-    - szuvas / nem szuvas pixel arány képenként: boxplot
-    - szuvas területek gyakori elhelyezkedése a képeken: heatmap
-*/
-/*- *Adat augmentáció vizualizáció*
-  - *Cél:* bemutatni az alkalmazott adatnövelési módszereket
-  - *Vizualizációk:*
-    - eredeti kép és augmentált változatok: képrács
-      - rotate: transform példa
-      - flip: transform példa
-      - contrast változtatás: intensity transform
-*/
-- *Modell predikció vizualizáció*
-  - *Cél:* a modell szegmentációs eredményeinek bemutatása
-  - *Vizualizációk:*
-    - eredeti kép: image
-    - ground truth maszk: mask
-    - modell predikció: predicted mask
-    - különbség (ground truth vs prediction): difference map
-      - false positive pixelek: piros jelölés
-      - false negative pixelek: kék jelölés
-
-- *Tanulási görbék*
-  - *Cél:* a modell tanulási folyamatának vizsgálata
-  - *Vizualizációk:*
-    - training loss alakulása epoch szerint: vonaldiagram
-    - validation loss alakulása epoch szerint: vonaldiagram
-    - Dice score alakulása epoch szerint: vonaldiagram
-    - IoU alakulása epoch szerint: vonaldiagram
-
-- *Teljesítmény metrikák*
-  - *Cél:* a modell végső teljesítményének értékelése
-  - *Vizualizációk:*
-    - confusion matrix pixel szinten: confusion matrix diagram
-    - Dice score értékek: oszlopdiagram
-    - IoU értékek: oszlopdiagram
-    - precision és recall értékek: oszlopdiagram
 
 = Adatvizualizáció
 
@@ -456,16 +388,6 @@ A scheduler epoch végén frissül, és a validációs Dice pontszám alapján k
 - interval: epoch
 
 //todo ide kod + elozo fejezet alapjan leirni a vegleges modell felepitest, mukodest
-A teszt adathalmazon kiértékeltük a kétfázisú modellt (Yolo+U-net), illetve a baseline U-net modellt is.
-A baseline U-Net modell esetében a bemeneti képek felbontása 256 × 256 pixel, az előfeldolgozott adatok a data/preprocessed könyvtárból származnak.
-
-Adataugmentáció: a tanítás során fényerő- és kontrasztmódosítást alkalmaztunk (p = 0.5, ±0.1 tartomány), rugalmas deformációt (p = 0.3, α = 30, σ = 5), horizontális tükrözést (p = 0.5), skálázást (p = 0.5, ±20%), valamint fókuszált kivágást (p = 0.8).
-
-Modell: a szegmentációhoz U-Net architektúrát használtunk, 64 kezdő csatornával és 4 szint mélységgel. A háló dropout regularizációt alkalmaz (p = 0.2). A bemenet egysávos (1 csatorna), a kimenet bináris maszk (1 csatorna).
-
-Tanítás: a modellt 500 epochon keresztül tanítottuk, 64-es batch mérettel. Optimalizálóként AdamW optimizer-t alkalmaztunk, 1 × 10⁻⁴ kezdeti tanulási rátával, amely a tanítás során 6.25 × 10⁻⁶ értékre csökkent. A modell 180 epoch után stabil konvergenciát mutatott (gradiens norma ≈ 1.10).
-
-Veszteségfüggvény: a tanítás során kombinált Dice és Focal veszteséget alkalmaztunk, kiegészítve egy kisebb súlyú bináris keresztentrópia (BCE) komponenssel. A Focal loss paraméterei α = 0.85 és γ = 2, súlya 0.8, míg a BCE komponens súlya 0.1, amely fokozatosan került bevezetésre az első 50 epoch során. A tanítás végére a teljes veszteség 0.373 értéket vett fel (Dice loss: 0.368, Focal loss: 0.0049).
 
 = YOLO-alapú objektumdetektáló modell működése
 
@@ -625,6 +547,47 @@ $
 - BCE loss többosztályos esetben
 - NMS redundancia csökkentésére
 
+=== Kezdetleges eredmények a kétfázisú illetve U-net baseline modllekre
+
+A teszt adathalmazon kiértékeltük a kétfázisú modellt (Yolo+U-net), illetve a baseline U-net modellt is.
+A *baseline U-Net modell* esetében a bemeneti képek felbontása 256 × 256 pixel, az előfeldolgozott adatok a data/preprocessed könyvtárból származnak.
+
+*Adataugmentáció:* a tanítás során fényerő- és kontrasztmódosítást alkalmaztunk (p = 0.5, ±0.1 tartomány), rugalmas deformációt (p = 0.3, α = 30, σ = 5), horizontális tükrözést (p = 0.5), skálázást (p = 0.5, ±20%), valamint fókuszált kivágást (p = 0.8).
+
+*Modell:* a szegmentációhoz U-Net architektúrát használtunk, 64 kezdő csatornával és 4 szint mélységgel. A háló dropout regularizációt alkalmaz (p = 0.2). A bemenet egysávos (1 csatorna), a kimenet bináris maszk (1 csatorna).
+
+*Tanítás:* a modellt 500 epochon keresztül tanítottuk, 64-es batch mérettel. Optimalizálóként AdamW optimizer-t alkalmaztunk, 1 × 10⁻⁴ kezdeti tanulási rátával, amely a tanítás során 6.25 × 10⁻⁶ értékre csökkent. A modell 180 epoch után stabil konvergenciát mutatott (gradiens norma ≈ 1.10).
+
+*Veszteségfüggvény:* a tanítás során kombinált Dice és Focal veszteséget alkalmaztunk, kiegészítve egy kisebb súlyú bináris keresztentrópia (BCE) komponenssel. A Focal loss paraméterei α = 0.85 és γ = 2, súlya 0.8, míg a BCE komponens súlya 0.1, amely fokozatosan került bevezetésre az első 50 epoch során. A tanítás végére a teljes veszteség 0.373 értéket vett fel (Dice loss: 0.368, Focal loss: 0.0049).
+
+
+
+A teszt adathalmazon kiértékeltük a kétfázisú modellt is, amely egy detekciós (YOLO-alapú) és egy szegmentációs (U-Net) komponens egymásra építésével működik. A modell célja, hogy először lokalizálja a releváns fogterületeket, majd azokon finom szegmentációt végezzen.
+
+
+A *YOLO + U-Net kétfázisú modell* esetében úgy végeztük a tanítást, hogy előbb a detekciós komponenst (YOLO) tanítottuk meg a fogak lokalizálására, majd a kapott bounding boxok alapján kivágott régiókon külön tanítottuk a szegmentációs (U-Net) modellt. A detektor által előállított régiók köré kis mértékű padding-et alkalmaztunk a kontextus megőrzése érdekében, majd ezeket egységes méretre (256 × 256 pixel) skáláztuk.
+
+A tanítás során a két komponens nem egyszerre, hanem egymást követően került optimalizálásra: először a YOLO modell konvergenciáját biztosítottuk, majd annak kimenetét fixálva tanítottuk a U-Net modellt.
+
+*Adatok:* A bemeneti képek a detektor esetében 640 × 640 pixel felbontásúak, míg a szegmentáló hálózat 256 × 256 pixelre átméretezett kivágásokat (ROI-kat) kap.
+A bemenetek normalizálása [0, 1] tartományba történik.
+
+*Adataugmentáció:* A detekciós modell tanítása során tipikus objektumdetekciós augmentációk kerülnek alkalmazásra (pl. skálázás, tükrözés), míg a szegmentációs komponens esetében a baseline U-Net modellhez hasonló augmentációs eljárásokat alkalmaztunk a kivágott régiókon.
+A kivágások során 5% padding-et alkalmaztunk a detektált bounding boxok körül a kontextus megőrzése érdekében.
+
+Modell: A kétfázisú architektúra első komponense egy YOLO-alapú objektumdetektor, amely a fogak lokalizálására szolgál. A modell maximum 32 detekciót ad képenként, nem-maximális elnyomást (NMS) alkalmazva 0.55 IoU küszöbbel, valamint 0.22-es konfidencia küszöbbel.
+
+A *szegmentációs (U-Net)* komponens a detektált régiók kivágásain került tanításra. A modell 140 epoch után stabil konvergenciát mutatott, ahol a gradiens norma ≈ 1.26 volt. A tanulási ráta a tanítás során 2.5 × 10⁻⁵ értékre csökkent.
+
+*Tanítás:* A detekciós modellt 20 epochon keresztül tanítottuk, 8-as batch mérettel. Az optimalizáláshoz Adam-alapú megközelítést alkalmaztunk 5 × 10⁻⁴ kezdeti tanulási rátával és 1 × 10⁻⁵ súlycsökkentéssel (weight decay). A tanítás során nem alkalmaztunk tanulási ráta ütemezést vagy early stopping mechanizmust.
+ A tanítás során 0.5 valószínűséggel a rendszer ground truth bounding boxokat használ a stabilabb tanulás érdekében. A kivágások minimális mérete 2 pixel, valamint további 10 pixeles padding kerül alkalmazásra a bounding boxokra.
+
+*Veszteségfüggvény*: A detekciós komponens esetében a YOLO architektúrára jellemző összetett veszteségfüggvényt alkalmaztuk, amely tartalmaz lokalizációs, objektumossági és klasszifikációs komponenseket.
+ szegmentációs komponens esetében a baseline modellhez hasonlóan kombinált Dice és Focal veszteséget alkalmaztunk, kiegészítve egy kisebb súlyú bináris keresztentrópia (BCE) komponenssel.
+ //A végső maszk előállítása 0.5-ös küszöböléssel történik.
+
+
+
 #figure(
   grid(
     columns: 2,
@@ -635,10 +598,10 @@ $
     ],
 
     [
-      #image("./figures/m4_phase/u-net_baseline_loss_curve.png", width: 100%)
+      #image("./figures/m4_phase/2phase_unet_learning_curve.png", width: 100%)
     ]
   ),
-  caption: [A U-net baseline (balra) modell illetve a kétfázisú modell (jobboldali) confusion mátrixai a teszt adathalmazon.]
+  caption: [A U-net baseline (balra) modell illetve a kétfázisú modell (jobboldali) tanulási görbéi a tanító és validációs adathalmazon.]
 )
 
 #figure(
