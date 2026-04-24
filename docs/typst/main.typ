@@ -391,6 +391,8 @@ A scheduler epoch végén frissül, és a validációs Dice pontszám alapján k
 
 //todo ide kod + elozo fejezet alapjan leirni a vegleges modell felepitest, mukodest
 
+
+
 == YOLO-alapú objektumdetektáló modell működése
 
 A *YOLO (You Only Look Once)* egy egyfázisú (single-stage) objektumdetektáló architektúra, amely egyetlen neurális hálózati előrecsatolás során végzi el mind az objektumok lokalizációját, mind azok osztályozását. A modell a bemeneti képet egy rácsra bontja, és minden rácspontban több előre definiált *anchor box* segítségével becsli meg az objektumok jelenlétét.
@@ -581,8 +583,15 @@ Modell: A kétfázisú architektúra első komponense egy YOLO-alapú objektumde
 
 A *szegmentációs (U-Net)* komponens a detektált régiók kivágásain került tanításra. A modell 140 epoch után stabil konvergenciát mutatott, ahol a gradiens norma ≈ 1.26 volt. A tanulási ráta a tanítás során 2.5 × 10⁻⁵ értékre csökkent.
 
-*Tanítás:* A detekciós modellt 20 epochon keresztül tanítottuk, 8-as batch mérettel. Az optimalizáláshoz Adam-alapú megközelítést alkalmaztunk 5 × 10⁻⁴ kezdeti tanulási rátával és 1 × 10⁻⁵ súlycsökkentéssel (weight decay). A tanítás során nem alkalmaztunk tanulási ráta ütemezést vagy early stopping mechanizmust.
- A tanítás során 0.5 valószínűséggel a rendszer ground truth bounding boxokat használ a stabilabb tanulás érdekében. A kivágások minimális mérete 2 pixel, valamint további 10 pixeles padding kerül alkalmazásra a bounding boxokra.
+*Tanítás:* A detekciós komponenst (YOLO) 20 epochon keresztül tanítottuk, 8-as batch mérettel. Az optimalizáláshoz Adam-alapú megközelítést alkalmaztunk 5 × 10⁻⁴ kezdeti tanulási rátával és 1 × 10⁻⁵ súlycsökkentéssel (weight decay). A tanítás során nem alkalmaztunk tanulási ráta ütemezést vagy early stopping mechanizmust.
+
+A szegmentációs (U-Net) komponenst nem teljes képeken, hanem patch-alapú megközelítéssel tanítottuk. A bemeneti képeket 128 × 128 méretű kivágásokra bontottuk, és ezeken végeztük a tanítást, amely lehetővé tette a lokális struktúrák részletesebb tanulását. A mintavételezés során 0.8 valószínűséggel fókuszált kivágásokat alkalmaztunk, biztosítva, hogy a releváns régiók nagyobb arányban jelenjenek meg a tanító adatok között.
+
+A U-Net modell 140 epochon keresztül került tanításra, és stabil konvergenciát mutatott (gradiens norma ≈ 1.26). Az optimalizálás AdamW optimizerrel történt, ahol a tanulási ráta a tanítás végére 2.5 × 10⁻⁵ értékre csökkent.
+
+Az end-to-end konfiguráció során a tanítás 0.5 valószínűséggel ground truth bounding boxokat használ a stabilabb tanulás érdekében, csökkentve a detekciós hibák továbbterjedését a szegmentációs komponens felé. A kivágások minimális mérete 2 pixel, valamint további 10 pixeles padding került alkalmazásra a bounding boxokra.
+
+A kiértékelés során a szegmentációs modell teljesítményét nem a teljes képeken, hanem a detektor által meghatározott bounding boxokon belül vizsgáltuk. A detektált régiók kivágásra kerültek, majd ezekre alkalmaztuk a U-Net modellt, és az így kapott maszkokat hasonlítottuk össze a ground truth annotációkkal.
 
 *Veszteségfüggvény*: A detekciós komponens esetében a YOLO architektúrára jellemző összetett veszteségfüggvényt alkalmaztuk, amely tartalmaz lokalizációs, objektumossági és klasszifikációs komponenseket.
  szegmentációs komponens esetében a baseline modellhez hasonlóan kombinált Dice és Focal veszteséget alkalmaztunk, kiegészítve egy kisebb súlyú bináris keresztentrópia (BCE) komponenssel.
