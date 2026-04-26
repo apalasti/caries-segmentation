@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from .dataset import load_split_pairs, BaseKariesDataset, TiledEvalKariesDataset
+from .dataset import load_split_pairs, BaseKariesDataset, TiledEvalKariesDataset, Method1KariesDataset
 from .augmentations import get_train_transforms, get_val_transforms
 
 
@@ -15,13 +15,15 @@ class SegmentationDataModule(pl.LightningDataModule):
         self.num_workers = config["training"].get("num_workers", 4)
         self.size = tuple(config["data"].get("images_size", [256, 256]))
 
+        # Method 1 specific
+        self.use_method1_crops = config["data"].get("use_method1_crops", False)
+        self.method1_crop_root = config["data"].get("method1_crop_root", None)
+
         raw_patch = config["data"].get("patch_size", None)
-        self.patch_size = int(raw_patch) if raw_patch is not None else None
+        self.patch_size = int(raw_patch) if raw_patch is not None and raw_patch > 0 else None
 
         self.focused_crop_prob = float(config["data"].get("focused_crop_prob", 0.5))
         if self.patch_size is not None:
-            if self.patch_size <= 0:
-                raise ValueError("data.patch_size must be positive when set.")
             sh, sw = self.size
             if sh < self.patch_size or sw < self.patch_size:
                 raise ValueError(
@@ -39,6 +41,21 @@ class SegmentationDataModule(pl.LightningDataModule):
         self.val_transform = get_val_transforms(self.size)
 
     def setup(self, stage=None):
+        if self.use_method1_crops:
+            if not self.method1_crop_root:
+                raise ValueError("method1_crop_root must be provided when use_method1_crops is true")
+
+            self.train_dataset = Method1KariesDataset(
+                self.method1_crop_root, "train", size=self.size, transform=self.train_transform
+            )
+            self.val_dataset = Method1KariesDataset(
+                self.method1_crop_root, "val", size=self.size, transform=self.val_transform
+            )
+            self.test_dataset = Method1KariesDataset(
+                self.method1_crop_root, "test", size=self.size, transform=self.val_transform
+            )
+            return
+
         self.train_dataset = BaseKariesDataset(
             load_split_pairs(self.preprocessed_path, "train", self.sources),
             size=self.size,

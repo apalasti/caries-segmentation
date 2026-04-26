@@ -1,4 +1,6 @@
 import os
+import argparse
+import torch
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
@@ -17,7 +19,12 @@ from .utils.callbacks import MetricsHistoryCallback
 
 
 def train():
-    config = load_config()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="config.toml")
+    args_cli = parser.parse_args()
+
+    torch.set_float32_matmul_precision("high")
+    config = load_config(args_cli.config)
 
     seed = config["training"].get("seed", 42)
     pl.seed_everything(seed, workers=True)
@@ -86,10 +93,21 @@ def train():
     # callbacks.append(DeviceStatsMonitor())
     callbacks.append(RichProgressBar())
 
+    # SMOKE_RUN support
+    max_epochs = config["training"].get("epochs", 50)
+    limit_train_batches = config["training"].get("limit_train_batches", None)
+    limit_val_batches = config["training"].get("limit_val_batches", None)
+
+    if os.environ.get("SMOKE_RUN", "false").lower() in ("true", "1", "yes"):
+        print("Smoke run enabled: limiting epochs and batches.")
+        max_epochs = 1
+        limit_train_batches = 2
+        limit_val_batches = 2
+
     trainer = pl.Trainer(
-        max_epochs=config["training"].get("epochs", 50),
-        limit_train_batches=config["training"].get("limit_train_batches", None),
-        limit_val_batches=config["training"].get("limit_val_batches", None),
+        max_epochs=max_epochs,
+        limit_train_batches=limit_train_batches,
+        limit_val_batches=limit_val_batches,
         log_every_n_steps=10,
         accelerator="auto",
         devices="auto",

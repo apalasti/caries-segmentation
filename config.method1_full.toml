@@ -1,0 +1,65 @@
+[project]
+name = "caries-segmentation-method1"
+
+[stage1_detection]
+# YOLO detection training
+data_dir = "data/preprocessed_detection"
+model = "yolov8s.pt"
+epochs = 30
+imgsz = 640
+batch = 16
+name = "tooth_ultralytics_caries_v1"
+
+[stage1_export]
+# Exporting crops for segmentation
+weights = "runs/detect/tooth_ultralytics_caries_v1/weights/best.pt"
+seg_root = "data/preprocessed"
+splits = ["train", "val", "test"]
+output_dir = "outputs/method1_crops_v1"
+imgsz = 640
+conf = 0.25
+iou = 0.45
+padding_ratio = 0.15
+
+[data]
+preprocessed_path = "data/preprocessed"
+use_method1_crops = true
+method1_crop_root = "outputs/method1_crops_v1/crops"
+images_size = [256, 256] # Size to resize the crops to
+patch_size = 0 # Method 1 uses full crops, not patches of crops
+
+[model]
+n_channels = 1
+n_classes = 1
+depth = 4
+base_channels = 64
+dropout = 0.2
+
+[training]
+epochs = 200
+batch_size = 8
+learning_rate = 1e-4
+weight_decay = 1e-4
+num_workers = 4
+output_dir = "checkpoints/method1_unet"
+seed = 42
+shuffle_train = true
+losses = ["focal", "dice"]
+focal_gamma = 2.0
+focal_alpha = 0.8
+focal_term_weight = 1.0
+early_stopping = true
+early_stopping_patience = 20
+checkpointing = true
+lr_scheduler = true
+
+[augmentation]
+enabled = true
+horizontal_flip_prob = 0.5
+brightness_contrast_prob = 0.5
+brightness_limit = 0.1
+contrast_limit = 0.1
+
+[wandb]
+project = "caries-segmentation"
+group = "method1-pipeline"

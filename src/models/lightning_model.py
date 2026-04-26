@@ -7,6 +7,8 @@ from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
 import seaborn as sns
 from .unet import UNet
 from ..data.cropping import padded_canvas_hw, stitch_tiles
@@ -14,7 +16,7 @@ from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff
 from ..utils.focal_loss import FocalLoss
 
 
-LOGGED_IXS = np.array([0, 1, 2], dtype=np.int32)
+LOGGED_IXS = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.int32)
 
 
 def _stitch_batch_if_tiled(
@@ -259,7 +261,9 @@ class SegmentationLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
         tile_layout: tuple[int, int, int, int] | None = None
-        if images.ndim == 5:
+        
+        # ONLY do tiled logic if NOT Method 1
+        if images.ndim == 5 and not self.hparams["data"].get("use_method1_crops", False):
             B, N, C, W, H = images.shape
             tile_layout = (B, N, W, H)
             images = images.reshape(B*N, C, W, H)
@@ -301,7 +305,8 @@ class SegmentationLightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
         tile_layout: tuple[int, int, int, int] | None = None
-        if images.ndim == 5:
+        
+        if images.ndim == 5 and not self.hparams["data"].get("use_method1_crops", False):
             B, N, C, W, H = images.shape
             tile_layout = (B, N, W, H)
             images = images.reshape(B*N, C, W, H)
