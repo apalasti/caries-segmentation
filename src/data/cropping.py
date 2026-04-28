@@ -15,6 +15,76 @@ def center_patch_top_left(h: int, w: int, ph: int, pw: int) -> tuple[int, int]:
     return (h - ph) // 2, (w - pw) // 2
 
 
+def yolo_norm_box_to_pixels(
+    xc: float, yc: float, bw: float, bh: float, h: int, w: int
+) -> tuple[int, int, int, int]:
+    """Convert normalized YOLO center-size box to clamped inclusive pixel bounds."""
+    if h <= 0 or w <= 0:
+        raise ValueError(f"Invalid canvas shape h={h}, w={w}")
+    xc = float(np.clip(xc, 0.0, 1.0))
+    yc = float(np.clip(yc, 0.0, 1.0))
+    bw = max(0.0, float(bw))
+    bh = max(0.0, float(bh))
+    x0 = (xc - bw / 2.0) * w
+    x1 = (xc + bw / 2.0) * w
+    y0 = (yc - bh / 2.0) * h
+    y1 = (yc + bh / 2.0) * h
+    min_c = int(np.floor(x0))
+    max_c = int(np.ceil(x1) - 1)
+    min_r = int(np.floor(y0))
+    max_r = int(np.ceil(y1) - 1)
+    min_r = int(np.clip(min_r, 0, h - 1))
+    max_r = int(np.clip(max_r, 0, h - 1))
+    min_c = int(np.clip(min_c, 0, w - 1))
+    max_c = int(np.clip(max_c, 0, w - 1))
+    if max_r < min_r:
+        min_r = max_r = int(np.clip(round(yc * (h - 1)), 0, h - 1))
+    if max_c < min_c:
+        min_c = max_c = int(np.clip(round(xc * (w - 1)), 0, w - 1))
+    return min_r, min_c, max_r, max_c
+
+
+def eval_patch_top_left_for_bbox(
+    h: int,
+    w: int,
+    ph: int,
+    pw: int,
+    min_r: int,
+    min_c: int,
+    max_r: int,
+    max_c: int,
+) -> tuple[int, int]:
+    """Deterministic top-left patch origin that covers the bbox when possible."""
+    if ph <= 0 or pw <= 0:
+        raise ValueError(f"Patch size must be positive, got ph={ph}, pw={pw}")
+    if h < ph or w < pw:
+        raise ValueError(f"Canvas ({h}, {w}) must be >= patch ({ph}, {pw})")
+    bh = max_r - min_r + 1
+    bw = max_c - min_c + 1
+    if bh <= ph and bw <= pw:
+        y_lo = max(0, max_r + 1 - ph)
+        y_hi = min(min_r, h - ph)
+        x_lo = max(0, max_c + 1 - pw)
+        x_hi = min(min_c, w - pw)
+        if y_lo <= y_hi:
+            y0 = (y_lo + y_hi) // 2
+        else:
+            cy = (min_r + max_r) // 2
+            y0 = max(0, min(cy - ph // 2, h - ph))
+        if x_lo <= x_hi:
+            x0 = (x_lo + x_hi) // 2
+        else:
+            cx = (min_c + max_c) // 2
+            x0 = max(0, min(cx - pw // 2, w - pw))
+        return y0, x0
+
+    cy = (min_r + max_r) // 2
+    cx = (min_c + max_c) // 2
+    y0 = max(0, min(cy - ph // 2, h - ph))
+    x0 = max(0, min(cx - pw // 2, w - pw))
+    return y0, x0
+
+
 def _connected_component_bboxes(mask: np.ndarray) -> list[tuple[int, int, int, int]]:
     """4-connected foreground blobs; each item is (min_r, min_c, max_r, max_c)."""
     m = (mask > 0).astype(np.uint8)
