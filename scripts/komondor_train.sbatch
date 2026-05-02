@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=nr_haml2025
 #SBATCH --partition=gpu
-#SBATCH --time=01:00:00
+#SBATCH --time=03:00:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=4000
 #SBATCH --gres=gpu:1

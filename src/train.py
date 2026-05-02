@@ -12,6 +12,7 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
+from .utils.callbacks import StepTimingCallback
 
 
 def train():
@@ -78,6 +79,7 @@ def train():
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
     callbacks.append(RichProgressBar())
+    callbacks.append(StepTimingCallback())
 
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
