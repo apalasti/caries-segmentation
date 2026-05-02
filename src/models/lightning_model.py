@@ -5,7 +5,7 @@ import torch.nn as nn
 import wandb
 from pytorch_lightning.loggers import WandbLogger
 
-from ..data.cropping import cut_patches_from_canvas, stitch_patches
+from ..data.cropping import clamp_fill_for_dtype, cut_patches_from_canvas, stitch_patches
 from ..utils.focal_loss import FocalLoss
 from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff
 from .unet import UNet
@@ -165,7 +165,9 @@ class SegmentationLightningModule(pl.LightningModule):
         c = int(full_image.shape[0])
 
         if origins.shape[0] == 0:
-            full_logits = full_image.new_full((c, *canvas_hw), -1e9)
+            full_logits = full_image.new_full(
+                (c, *canvas_hw), clamp_fill_for_dtype(-1e9, full_image.dtype)
+            )
         else:
             patches = cut_patches_from_canvas(full_image, origins, int(ph), int(pw))
             patch_logits = self(patches)

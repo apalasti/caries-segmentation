@@ -20,8 +20,8 @@ def load_split_pairs(preprocessed_path, split: str, sources=None):
     if sources:
         df = df[df["source"].isin(sources)]
 
-    df["image_path"] = preprocessed_path + "/" + split + "/images/" + df["id"] + ".png",
-    df["mask_path"] = preprocessed_path + "/" + split + "/masks/" + df["id"] + ".png",
+    df["image_path"] = preprocessed_path + "/" + split + "/images/" + df["id"] + ".png"
+    df["mask_path"] = preprocessed_path + "/" + split + "/masks/" + df["id"] + ".png"
     return df
 
 

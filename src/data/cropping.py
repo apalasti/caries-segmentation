@@ -213,6 +213,15 @@ def cut_patches_from_canvas(
     return patches
 
 
+def clamp_fill_for_dtype(fill_value: float, dtype: torch.dtype) -> float | int:
+    """Clamp fill so ``Tensor.new_full(..., fill)`` is valid (e.g. float16 AMP)."""
+    if not dtype.is_floating_point:
+        return fill_value
+    finfo = torch.finfo(dtype)
+    f = float(fill_value)
+    return max(finfo.min, min(finfo.max, f))
+
+
 def stitch_patches(
     patch_values: torch.Tensor,
     origins_yx: torch.Tensor,
@@ -235,12 +244,13 @@ def stitch_patches(
     else:
         h, w = int(canvas_hw[0]), int(canvas_hw[1])
 
+    fill = clamp_fill_for_dtype(fill_value, patch_values.dtype)
     if patch_values.ndim == 3:
         n, ph, pw = patch_values.shape
-        out = patch_values.new_full((h, w), fill_value)
+        out = patch_values.new_full((h, w), fill)
     elif patch_values.ndim == 4:
         n, c, ph, pw = patch_values.shape
-        out = patch_values.new_full((c, h, w), fill_value)
+        out = patch_values.new_full((c, h, w), fill)
     else:
         raise ValueError(
             f"patch_values must be 3D or 4D, got shape {tuple(patch_values.shape)}"
