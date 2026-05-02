@@ -1,46 +1,17 @@
-from typing import cast
+import numpy as np
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
-import numpy as np
-from pathlib import Path
-from pytorch_lightning.loggers import WandbLogger
 import wandb
-import matplotlib.pyplot as plt
-import seaborn as sns
-from .unet import UNet
-from ..data.cropping import padded_canvas_hw, stitch_tiles
-from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff
+from pytorch_lightning.loggers import WandbLogger
+
+from ..data.cropping import cut_patches_from_canvas, stitch_patches
 from ..utils.focal_loss import FocalLoss
+from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff
+from .unet import UNet
 
 
 LOGGED_IXS = np.array([0, 1, 2], dtype=np.int32)
-
-
-def _stitch_batch_if_tiled(
-    preds: torch.Tensor,
-    images: torch.Tensor,
-    masks: torch.Tensor,
-    layout: tuple[int, int, int, int],
-    data_cfg: dict,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """``layout`` is ``(B, N, th, tw)``; tensors are flat ``(B*N, …, th, tw)``."""
-    B, N, th, tw = layout
-    sz = data_cfg["images_size"]
-    oh, ow = int(sz[0]), int(sz[1])
-    ph = int(data_cfg["patch_size"])
-    ch, cw = padded_canvas_hw(oh, ow, ph, ph)
-    c_out = preds.shape[1]
-    ci = images.shape[1]
-    cm = masks.shape[1]
-    pt = preds.view(B, N, c_out, th, tw)
-    pi = images.view(B, N, ci, th, tw)
-    pm = masks.view(B, N, cm, th, tw)
-    return (
-        stitch_tiles(pt, ch, cw, th, tw)[:, :, :oh, :ow],
-        stitch_tiles(pi, ch, cw, th, tw)[:, :, :oh, :ow],
-        stitch_tiles(pm, ch, cw, th, tw)[:, :, :oh, :ow],
-    )
 
 
 def _normalize_bce_pos_weight(value):
@@ -162,7 +133,53 @@ class SegmentationLightningModule(pl.LightningModule):
         total = sum(parts.values())
         return total, parts, bce_mult, focal_mult
 
-    def _log_predictions(self, images, masks, preds, prefix="train"):
+    def _forward_full(
+        self, batch: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return (full_canvas_logits, images, masks).
+
+        If the batch contains ``origins_yx``, cut patches from the full image,
+        forward them through the model, and stitch the patch logits back onto
+        the canvas (uncovered pixels get a very negative fill value so they
+        decode to background after sigmoid). Otherwise the network sees the
+        full image directly. In both cases the returned logits and masks share
+        the full-canvas shape ``[B, C, H, W]``.
+        """
+        images = batch["image"]
+        masks = batch["mask"]
+
+        if "origins_yx" not in batch:
+            return self(images), images, masks
+
+        if images.shape[0] != 1:
+            raise RuntimeError(
+                "Bbox eval expects batch_size=1, got "
+                f"{tuple(images.shape)}"
+            )
+
+        full_image = images[0]
+        origins = batch["origins_yx"][0].to(device=full_image.device)
+        ph, pw = batch["patch_hw"][0].tolist()
+
+        canvas_hw = (int(full_image.shape[-2]), int(full_image.shape[-1]))
+        c = int(full_image.shape[0])
+
+        if origins.shape[0] == 0:
+            full_logits = full_image.new_full((c, *canvas_hw), -1e9)
+        else:
+            patches = cut_patches_from_canvas(full_image, origins, int(ph), int(pw))
+            patch_logits = self(patches)
+            full_logits = stitch_patches(
+                patch_logits,
+                origins,
+                canvas_hw,
+                reduce="max",
+                fill_value=-1e9,
+            )
+
+        return full_logits.unsqueeze(0), images, masks
+
+    def _log_predictions(self, images, masks, logits, prefix="train"):
         if not isinstance(self.logger, WandbLogger):
             return
 
@@ -173,7 +190,7 @@ class SegmentationLightningModule(pl.LightningModule):
 
         images_np = images[ixs, 0].cpu().numpy()
         masks_np = masks[ixs, 0].cpu().numpy()
-        preds_np = torch.sigmoid(preds[ixs, 0]).detach().cpu().numpy()
+        preds_np = torch.sigmoid(logits[ixs, 0]).detach().cpu().numpy()
 
         wandb_images = []
         for i, idx in enumerate(ixs):
@@ -209,12 +226,8 @@ class SegmentationLightningModule(pl.LightningModule):
         self.log("grad_norm", total_norm, on_step=True, on_epoch=False, prog_bar=False)
 
     def training_step(self, batch, batch_idx):
-        images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
-        if images.ndim == 5:
-            B, N, C, W, H = images.shape
-            images = images.reshape(B*N, C, W, H)
-            masks = masks.reshape(B*N, C, W, H)
-
+        images = batch["image"]
+        masks = batch["mask"]
         preds = self(images)
         loss, parts, bce_mult, focal_mult = self._compute_loss(preds, masks)
 
@@ -257,19 +270,7 @@ class SegmentationLightningModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
-        tile_layout: tuple[int, int, int, int] | None = None
-        if images.ndim == 5:
-            B, N, C, W, H = images.shape
-            tile_layout = (B, N, W, H)
-            images = images.reshape(B*N, C, W, H)
-            masks = masks.reshape(B*N, C, W, H)
-
-        preds = self(images)
-        if tile_layout is not None:
-            preds, images, masks = _stitch_batch_if_tiled(
-                preds, images, masks, tile_layout, self.hparams["data"]
-            )
+        preds, images, masks = self._forward_full(batch)
 
         loss, parts, *_ = self._compute_loss(preds, masks)
         iou = iou_coeff(preds, masks)
@@ -299,19 +300,7 @@ class SegmentationLightningModule(pl.LightningModule):
         return {"val_loss": loss, "val_iou": iou, "val_dice": dice_score}
 
     def test_step(self, batch, batch_idx):
-        images, masks = cast(tuple[torch.Tensor, torch.Tensor], batch)
-        tile_layout: tuple[int, int, int, int] | None = None
-        if images.ndim == 5:
-            B, N, C, W, H = images.shape
-            tile_layout = (B, N, W, H)
-            images = images.reshape(B*N, C, W, H)
-            masks = masks.reshape(B*N, C, W, H)
-
-        logits = self(images)
-        if tile_layout is not None:
-            logits, images, masks = _stitch_batch_if_tiled(
-                logits, images, masks, tile_layout, self.hparams["data"]
-            )
+        logits, images, masks = self._forward_full(batch)
 
         loss, parts, *_ = self._compute_loss(logits, masks)
         probs = torch.sigmoid(logits)
@@ -335,6 +324,9 @@ class SegmentationLightningModule(pl.LightningModule):
         self.log("test/iou", iou, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/dice", dice_score, on_step=False, on_epoch=True, prog_bar=True)
 
+        if batch_idx == 0:
+            self._log_predictions(images, masks, logits, prefix="val")
+
         return {"test_loss": loss, "test_iou": iou, "test_dice": dice_score}
 
     def configure_optimizers(self):  # type: ignore[override]
@@ -354,42 +346,3 @@ class SegmentationLightningModule(pl.LightningModule):
                 }
             ]
         return optimizer
-
-    @property
-    def model_instance(self):
-        return self.model
-
-    def on_test_start(self):
-        self.test_preds.clear()
-        self.test_targets.clear()
-
-    def on_test_epoch_end(self):
-        preds = torch.cat(self.test_preds).view(-1)
-        targets = torch.cat(self.test_targets).view(-1)
-
-        TP = ((preds == 1) & (targets == 1)).sum().item()
-        TN = ((preds == 0) & (targets == 0)).sum().item()
-        FP = ((preds == 1) & (targets == 0)).sum().item()
-        FN = ((preds == 0) & (targets == 1)).sum().item()
-
-        cm = [[TN, FP],
-              [FN, TP]]
-
-        plt.figure(figsize=(5, 5))
-        sns.heatmap(
-            cm,
-            annot=True,
-            fmt="d",
-            cmap="Blues",
-            xticklabels=["Background", "Caries"],
-            yticklabels=["Background", "Caries"],
-        )
-
-        plt.xlabel("Predicted")
-        plt.ylabel("Ground Truth")
-        plt.title("Confusion Matrix")
-
-        output_dir = Path(self.hparams.get("training", {}).get("output_dir", "."))
-        output_dir.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_dir / f"{self.logger.name}_confusion_matrix.png")
-        plt.close()

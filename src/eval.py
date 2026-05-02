@@ -1,18 +1,14 @@
 import os
-from collections import defaultdict
 from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .config import load_config
-from .data.dataset import (
-    crop_patch_from_bbox_row,
-    image_array_to_tensor,
-    load_image_mask_arrays,
-    read_bbox_csv_rows,
-)
+from .data.dataset import BboxEvalDataset
+from .data.lightning_datamodule import load_bboxes_df, load_split_pairs
 from .models.lightning_model import SegmentationLightningModule
 from .utils.visualization import plot_confusion_matrix, plot_metrics_bars
 
@@ -43,66 +39,40 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
     preprocessed_path = config["data"]["preprocessed_path"]
     size = tuple(config["data"].get("images_size", [256, 256]))
     patch_size = int(config["data"].get("patch_size", min(size)))
-    batch_size = int(config["training"].get("batch_size", 32))
-    num_workers = int(config["training"].get("num_workers", 0))
-    del num_workers  # kept for config parity
 
     bboxes_csv_path = (
         Path(bboxes_csv)
         if bboxes_csv is not None
         else Path(__file__).resolve().parents[1] / "data" / "preprocessed" / "bboxes.csv"
     )
-    rows = read_bbox_csv_rows(str(bboxes_csv_path))
-    rows_by_image: dict[str, list] = defaultdict(list)
-    for row in rows:
-        rows_by_image[row.image_rel].append(row)
+    test_images_df = load_split_pairs(
+        preprocessed_path, "test", config["data"].get("sources", [])
+    )
+    dataset = BboxEvalDataset(
+        images_df=test_images_df,
+        bboxes_df=load_bboxes_df(str(bboxes_csv_path)),
+        size=size,
+        patch_size=patch_size,
+    )
+    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
     TP = FP = TN = FN = 0
 
-    for _, image_rows in tqdm(rows_by_image.items(), total=len(rows_by_image)):
-        first = image_rows[0]
-        image_path = os.path.join(preprocessed_path, first.image_rel)
-        mask_path = os.path.join(preprocessed_path, first.mask_rel)
-        full_img, full_mask = load_image_mask_arrays(
-            image_path,
-            mask_path,
-            size=size,
-            transform=None,
-        )
-        h, w = full_img.shape[:2]
-        if patch_size > h or patch_size > w:
-            raise ValueError(
-                f"patch_size={patch_size} must be <= resized shape ({h}, {w})"
-            )
-        canvas_probs = torch.zeros((h, w), device=device, dtype=torch.float32)
-
+    for batch in tqdm(loader, total=len(loader)):
+        batch_on_device = {
+            k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+            for k, v in batch.items()
+        }
         with torch.no_grad():
-            for start in range(0, len(image_rows), batch_size):
-                chunk = image_rows[start : start + batch_size]
-                batch_crops = []
-                batch_origins = []
-                for row in chunk:
-                    img_crop, _, y0, x0 = crop_patch_from_bbox_row(
-                        full_img, full_mask, row, patch_size
-                    )
-                    batch_crops.append(image_array_to_tensor(img_crop))
-                    batch_origins.append((y0, x0))
-                crops_tensor = torch.stack(batch_crops, dim=0).to(device)
-                probs = torch.sigmoid(model(crops_tensor)).squeeze(1)
-                for i, (y0, x0) in enumerate(batch_origins):
-                    y1 = y0 + patch_size
-                    x1 = x0 + patch_size
-                    canvas_probs[y0:y1, x0:x1] = torch.maximum(
-                        canvas_probs[y0:y1, x0:x1], probs[i]
-                    )
+            logits, _, masks = model._forward_full(batch_on_device)
+        probs = torch.sigmoid(logits)
+        preds = probs > threshold
+        gts = masks > 0.5
 
-        preds = canvas_probs > threshold
-        masks = torch.from_numpy((full_mask > 0).astype(bool)).to(device)
-
-        TP += ((preds == 1) & (masks == 1)).sum().item()
-        TN += ((preds == 0) & (masks == 0)).sum().item()
-        FP += ((preds == 1) & (masks == 0)).sum().item()
-        FN += ((preds == 0) & (masks == 1)).sum().item()
+        TP += ((preds == 1) & (gts == 1)).sum().item()
+        TN += ((preds == 0) & (gts == 0)).sum().item()
+        FP += ((preds == 1) & (gts == 0)).sum().item()
+        FN += ((preds == 0) & (gts == 1)).sum().item()
 
     metrics = {
         "TP": TP,
@@ -115,7 +85,6 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
         "iou": TP / (TP + FP + FN + 1e-8)
     }
 
-    # 3. Confusion matrix ábrázolása és mentése
     plot_confusion_matrix(metrics, save_path=str(save_dir / "confusion_matrix.png"))
     plot_metrics_bars(metrics, save_dir)
     print("Evaluation finished. Metrics:")

@@ -2,7 +2,7 @@ import albumentations as A
 import numpy as np
 
 
-def get_train_transforms(config=None, target_size=(256, 256)):
+def get_train_transforms(config=None, target_size=(256, 256), bbox_aware: bool = False):
     if config is None:
         config = {}
 
@@ -46,7 +46,15 @@ def get_train_transforms(config=None, target_size=(256, 256)):
             A.Resize(height=target_size[0], width=target_size[1], interpolation=1)
         )
 
-    return A.Compose(transforms) if transforms else None
+    if not transforms:
+        return None
+
+    if bbox_aware:
+        return A.Compose(
+            transforms,
+            bbox_params=A.BboxParams(format="yolo", label_fields=[]),
+        )
+    return A.Compose(transforms)
 
 
 def get_val_transforms(target_size=(256, 256)):

@@ -1,8 +1,42 @@
-import torch
-from torch.utils.data import DataLoader
+import os
+import pandas as pd
 import pytorch_lightning as pl
-from .dataset import load_split_pairs, BaseKariesDataset, TiledEvalKariesDataset
+from torch.utils.data import DataLoader
+
 from .augmentations import get_train_transforms, get_val_transforms
+from .dataset import BboxEvalDataset, BboxPatchDataset, FullImageDataset
+
+
+def load_split_pairs(preprocessed_path, split: str, sources=None):
+    csv_path = os.path.join(preprocessed_path, "dataset.csv")
+    df = pd.read_csv(csv_path).astype(
+        {
+            "id": "string",
+            "split": "string",
+            "source": "string",
+        }
+    )
+    df = df[df["split"] == split]
+    if sources:
+        df = df[df["source"].isin(sources)]
+
+    df["image_path"] = preprocessed_path + "/" + split + "/images/" + df["id"] + ".png",
+    df["mask_path"] = preprocessed_path + "/" + split + "/masks/" + df["id"] + ".png",
+    return df
+
+
+def load_bboxes_df(bboxes_csv_path: str) -> pd.DataFrame:
+    return pd.read_csv(bboxes_csv_path).astype(
+        {
+            "id": "string",
+            "w": "float64",
+            "h": "float64",
+            "xc": "float64",
+            "yc": "float64",
+            "box_index": "int64",
+            "score": "float64",
+        }
+    )
 
 
 class SegmentationDataModule(pl.LightningDataModule):
@@ -17,9 +51,12 @@ class SegmentationDataModule(pl.LightningDataModule):
 
         raw_patch = config["data"].get("patch_size", None)
         self.patch_size = int(raw_patch) if raw_patch is not None else None
+        self.bbox_mode = self.patch_size is not None
+        self.bboxes_csv_path = config["data"].get(
+            "bboxes_csv", os.path.join(self.preprocessed_path, "bboxes.csv")
+        )
 
-        self.focused_crop_prob = float(config["data"].get("focused_crop_prob", 0.5))
-        if self.patch_size is not None:
+        if self.bbox_mode:
             if self.patch_size <= 0:
                 raise ValueError("data.patch_size must be positive when set.")
             sh, sw = self.size
@@ -32,52 +69,53 @@ class SegmentationDataModule(pl.LightningDataModule):
         aug_config = config.get("augmentation", {})
         self.augmentation_enabled = aug_config.get("enabled", True)
         self.train_transform = (
-            get_train_transforms(aug_config, self.size)
+            get_train_transforms(aug_config, self.size, bbox_aware=self.bbox_mode)
             if self.augmentation_enabled
             else None
         )
         self.val_transform = get_val_transforms(self.size)
 
     def setup(self, stage=None):
-        self.train_dataset = BaseKariesDataset(
-            load_split_pairs(self.preprocessed_path, "train", self.sources),
-            size=self.size,
-            transform=self.train_transform,
-            patch_size=self.patch_size,
-            focused_crop_prob=self.focused_crop_prob,
-            center_crop=False,
-        )
+        train_pairs = load_split_pairs(self.preprocessed_path, "train", self.sources)
         val_pairs = load_split_pairs(self.preprocessed_path, "val", self.sources)
         test_pairs = load_split_pairs(self.preprocessed_path, "test", self.sources)
-        if self.patch_size is not None:
-            self.val_dataset = TiledEvalKariesDataset(
-                val_pairs,
+
+        if self.bbox_mode:
+            bboxes_df = load_bboxes_df(self.bboxes_csv_path)
+            self.train_dataset = BboxPatchDataset(
+                images_df=train_pairs,
+                bboxes_df=bboxes_df,
                 size=self.size,
-                transform=self.val_transform,
-                tile_size=self.patch_size,
+                transform=self.train_transform,
+                patch_size=self.patch_size,
             )
-            self.test_dataset = TiledEvalKariesDataset(
-                test_pairs,
+            self.val_dataset = BboxEvalDataset(
+                images_df=val_pairs,
+                bboxes_df=bboxes_df,
                 size=self.size,
-                transform=self.val_transform,
-                tile_size=self.patch_size,
+                patch_size=self.patch_size,
+            )
+            self.test_dataset = BboxEvalDataset(
+                images_df=test_pairs,
+                bboxes_df=bboxes_df,
+                size=self.size,
+                patch_size=self.patch_size,
             )
         else:
-            self.val_dataset = BaseKariesDataset(
+            self.train_dataset = FullImageDataset(
+                train_pairs,
+                size=self.size,
+                transform=self.train_transform,
+            )
+            self.val_dataset = FullImageDataset(
                 val_pairs,
                 size=self.size,
                 transform=self.val_transform,
-                patch_size=None,
-                focused_crop_prob=self.focused_crop_prob,
-                center_crop=False,
             )
-            self.test_dataset = BaseKariesDataset(
+            self.test_dataset = FullImageDataset(
                 test_pairs,
                 size=self.size,
                 transform=self.val_transform,
-                patch_size=None,
-                focused_crop_prob=self.focused_crop_prob,
-                center_crop=False,
             )
 
     def train_dataloader(self):
@@ -93,7 +131,7 @@ class SegmentationDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_dataset,
-            batch_size=self.batch_size,
+            batch_size=1 if self.bbox_mode else self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
@@ -102,7 +140,7 @@ class SegmentationDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
-            batch_size=self.batch_size,
+            batch_size=1 if self.bbox_mode else self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,

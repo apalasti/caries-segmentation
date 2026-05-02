@@ -1,5 +1,7 @@
 """Train-time random vs mask-focused patch crops on a fixed canvas."""
 
+from typing import Literal
+
 import cv2
 import numpy as np
 import torch
@@ -15,7 +17,7 @@ def center_patch_top_left(h: int, w: int, ph: int, pw: int) -> tuple[int, int]:
     return (h - ph) // 2, (w - pw) // 2
 
 
-def yolo_norm_box_to_pixels(
+def normed_box_to_pixels(
     xc: float, yc: float, bw: float, bh: float, h: int, w: int
 ) -> tuple[int, int, int, int]:
     """Convert normalized YOLO center-size box to clamped inclusive pixel bounds."""
@@ -44,7 +46,7 @@ def yolo_norm_box_to_pixels(
     return min_r, min_c, max_r, max_c
 
 
-def eval_patch_top_left_for_bbox(
+def bbox_covering_patch_top_left(
     h: int,
     w: int,
     ph: int,
@@ -160,22 +162,6 @@ def apply_patch_crop(
     return img[y0 : y0 + ph, x0 : x0 + pw], mask[y0 : y0 + ph, x0 : x0 + pw]
 
 
-def pad_to_tile_grid(
-    img: np.ndarray, mask: np.ndarray, ph: int, pw: int
-) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
-    """Pad bottom/right with zeros so height and width are multiples of ph and pw."""
-    h, w = img.shape[:2]
-    H = ((h + ph - 1) // ph) * ph
-    W = ((w + pw - 1) // pw) * pw
-    if H == h and W == w:
-        return img, mask, (h, w)
-    out_i = np.zeros((H, W), dtype=img.dtype)
-    out_m = np.zeros((H, W), dtype=mask.dtype)
-    out_i[:h, :w] = img
-    out_m[:h, :w] = mask
-    return out_i, out_m, (h, w)
-
-
 def iter_tile_top_lefts(h: int, w: int, ph: int, pw: int) -> list[tuple[int, int]]:
     coords: list[tuple[int, int]] = []
     for y in range(0, h, ph):
@@ -184,51 +170,103 @@ def iter_tile_top_lefts(h: int, w: int, ph: int, pw: int) -> list[tuple[int, int
     return coords
 
 
-def padded_canvas_hw(orig_h: int, orig_w: int, ph: int, pw: int) -> tuple[int, int]:
-    H = ((orig_h + ph - 1) // ph) * ph
-    W = ((orig_w + pw - 1) // pw) * pw
-    return H, W
-
-
-def stitch_tiles(
-    tiles: torch.Tensor,
-    canvas_h: int,
-    canvas_w: int,
-    tile_h: int,
-    tile_w: int,
+def cut_patches_from_canvas(
+    image: torch.Tensor,
+    origins_yx: torch.Tensor,
+    ph: int,
+    pw: int,
 ) -> torch.Tensor:
-    """Paste tile batch into a canvas (same order as ``iter_tile_top_lefts``).
+    """Cut N patches of size (ph, pw) from a [C, H, W] canvas at given top-left origins.
 
-    Args:
-        tiles: ``(B, N, C, tile_h, tile_w)`` row-major over ``(y0, x0)``.
-        canvas_h, canvas_w: Padded canvas size (multiples of ``tile_h``, ``tile_w``).
+    Returns a tensor of shape [N, C, ph, pw]. If N == 0, returns an empty tensor
+    of shape [0, C, ph, pw].
     """
-    B, N, C, th, tw = tiles.shape
-    if th != tile_h or tw != tile_w:
+    if image.ndim != 3:
         raise ValueError(
-            f"tile spatial shape ({th}, {tw}) != ({tile_h}, {tile_w})"
+            f"image must have shape [C, H, W], got {tuple(image.shape)}"
         )
-    out = tiles.new_zeros((B, C, canvas_h, canvas_w))
-    k = 0
-    for y0 in range(0, canvas_h, tile_h):
-        for x0 in range(0, canvas_w, tile_w):
-            out[:, :, y0 : y0 + tile_h, x0 : x0 + tile_w] = tiles[:, k, :, :, :]
-            k += 1
-    if k != N:
+    if origins_yx.ndim != 2 or origins_yx.shape[1] != 2:
         raise ValueError(
-            f"tile count N={N} does not match canvas grid "
-            f"{canvas_h // tile_h}x{canvas_w // tile_w}={k}"
+            f"origins_yx must have shape [N, 2], got {tuple(origins_yx.shape)}"
         )
+
+    c, h, w = int(image.shape[0]), int(image.shape[1]), int(image.shape[2])
+    n = int(origins_yx.shape[0])
+
+    if n == 0:
+        return image.new_zeros((0, c, ph, pw))
+
+    if h < ph or w < pw:
+        raise ValueError(f"Canvas ({h}, {w}) must be >= patch ({ph}, {pw})")
+
+    patches = image.new_empty((n, c, ph, pw))
+    origins = origins_yx.detach().to(dtype=torch.long).cpu()
+    for i in range(n):
+        y0 = int(origins[i, 0].item())
+        x0 = int(origins[i, 1].item())
+        if y0 < 0 or x0 < 0 or y0 + ph > h or x0 + pw > w:
+            raise ValueError(
+                f"patch {i} at ({y0}, {x0}) of size ({ph}, {pw}) "
+                f"falls outside canvas ({h}, {w})"
+            )
+        patches[i] = image[:, y0 : y0 + ph, x0 : x0 + pw]
+    return patches
+
+
+def stitch_patches(
+    patch_values: torch.Tensor,
+    origins_yx: torch.Tensor,
+    canvas_hw: tuple[int, int] | torch.Tensor,
+    reduce: Literal["max"] = "max",
+    fill_value: float = -1e9,
+) -> torch.Tensor:
+    """Stitch [N, C, ph, pw] (or [N, ph, pw]) patches back to a canvas.
+
+    Pixels not covered by any patch retain `fill_value`. Overlapping patches
+    are combined with `reduce` ("max" only for now). Returns [C, H, W] for 4D
+    inputs or [H, W] for 3D inputs.
+    """
+    if reduce != "max":
+        raise ValueError(f"Unsupported reduce mode: {reduce!r}")
+
+    if isinstance(canvas_hw, torch.Tensor):
+        h = int(canvas_hw[0].item())
+        w = int(canvas_hw[1].item())
+    else:
+        h, w = int(canvas_hw[0]), int(canvas_hw[1])
+
+    if patch_values.ndim == 3:
+        n, ph, pw = patch_values.shape
+        out = patch_values.new_full((h, w), fill_value)
+    elif patch_values.ndim == 4:
+        n, c, ph, pw = patch_values.shape
+        out = patch_values.new_full((c, h, w), fill_value)
+    else:
+        raise ValueError(
+            f"patch_values must be 3D or 4D, got shape {tuple(patch_values.shape)}"
+        )
+
+    if origins_yx.shape[0] != n:
+        raise ValueError(
+            f"origins count {origins_yx.shape[0]} does not match patches {n}"
+        )
+
+    if n == 0:
+        return out
+
+    origins = origins_yx.detach().to(dtype=torch.long).cpu()
+    for i in range(n):
+        y0 = int(origins[i, 0].item())
+        x0 = int(origins[i, 1].item())
+        y1 = y0 + ph
+        x1 = x0 + pw
+
+        if patch_values.ndim == 3:
+            out[y0:y1, x0:x1] = torch.maximum(
+                out[y0:y1, x0:x1], patch_values[i]
+            )
+        else:
+            out[:, y0:y1, x0:x1] = torch.maximum(
+                out[:, y0:y1, x0:x1], patch_values[i]
+            )
     return out
-
-
-def tiled_eval_layout_tensors(
-    orig_h: int, orig_w: int, ph: int, pw: int
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Fixed grid for val/test when every sample is resized to (orig_h, orig_w) before padding."""
-    H, W = padded_canvas_hw(orig_h, orig_w, ph, pw)
-    coords = iter_tile_top_lefts(H, W, ph, pw)
-    tile_origins = torch.tensor(coords, dtype=torch.long)
-    canvas_hw = torch.tensor([H, W], dtype=torch.long)
-    orig_hw = torch.tensor([orig_h, orig_w], dtype=torch.long)
-    return tile_origins, canvas_hw, orig_hw

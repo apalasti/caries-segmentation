@@ -79,11 +79,6 @@ def train():
 
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
-
-    metrics_cb = MetricsHistoryCallback()
-    callbacks.append(metrics_cb)
-
-    # callbacks.append(DeviceStatsMonitor())
     callbacks.append(RichProgressBar())
 
     trainer = pl.Trainer(
@@ -108,16 +103,6 @@ def train():
     else:
         # Fall back to last in-memory weights when no val-based checkpoint exists.
         trainer.test(model=model, datamodule=data_module)
-
-    plot_training_curves(
-        {
-            "train_loss": metrics_cb.train_loss,
-            "val_loss": metrics_cb.val_loss,
-            # "val_dice": metrics_cb.val_dice,
-            # "val_iou": metrics_cb.val_iou,
-        },
-        save_path=os.path.join(config["training"]["output_dir"], f"{logger.name}_curves.png"),
-    )
 
     if isinstance(logger, WandbLogger):
         logger.experiment.finish()
