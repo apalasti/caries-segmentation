@@ -10,7 +10,7 @@ preprocessed_path = "data/preprocessed"
 images_size = [640, 640]
 
 # Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
-# When set, val/test use a non-overlapping tile grid on the resized canvas and metrics run on stitched full images.
+# When set, train samples one patch, val/test evaluate stitched full-image predictions from patch sets.
 patch_size = 128
 
 # Train only: probability of mask-focused crop vs uniform random crop (empty mask falls back to random).
