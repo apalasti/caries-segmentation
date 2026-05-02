@@ -17,6 +17,23 @@ def center_patch_top_left(h: int, w: int, ph: int, pw: int) -> tuple[int, int]:
     return (h - ph) // 2, (w - pw) // 2
 
 
+def clamp_yolo_bbox(
+    xc: float, yc: float, bw: float, bh: float
+) -> tuple[float, float, float, float]:
+    """Shrink (if needed) a normalized YOLO box so x±w/2 and y±h/2 lie in [0, 1].
+
+    Preprocessing and Albumentations reject boxes that extend past the canvas;
+    CSV annotations can slightly exceed 1.0 due to resize/rounding.
+    """
+    xc = float(np.clip(xc, 0.0, 1.0))
+    yc = float(np.clip(yc, 0.0, 1.0))
+    bw = max(0.0, float(bw))
+    bh = max(0.0, float(bh))
+    bw = min(bw, 2.0 * xc, 2.0 * (1.0 - xc))
+    bh = min(bh, 2.0 * yc, 2.0 * (1.0 - yc))
+    return (xc, yc, bw, bh)
+
+
 def normed_box_to_pixels(
     xc: float, yc: float, bw: float, bh: float, h: int, w: int
 ) -> tuple[int, int, int, int]:

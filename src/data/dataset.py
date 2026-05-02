@@ -9,6 +9,7 @@ from torch.utils.data import Dataset
 from .cropping import (
     apply_patch_crop,
     bbox_covering_patch_top_left,
+    clamp_yolo_bbox,
     normed_box_to_pixels,
 )
 
@@ -132,12 +133,9 @@ class BboxPatchDataset(Dataset):
         if len(bboxes_aug) == 0:
             return augmented["image"], augmented["mask"], bbox_yolo
 
-        b = bboxes_aug[0]
-        return (
-            augmented["image"],
-            augmented["mask"],
-            (float(b[0]), float(b[1]), float(b[2]), float(b[3])),
-        )
+        raw = bboxes_aug[0]
+        b = clamp_yolo_bbox(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3]))
+        return augmented["image"], augmented["mask"], b
 
     def __getitem__(self, i: int) -> dict[str, Any]:
         row = self.bbox_df.iloc[i]
@@ -148,7 +146,7 @@ class BboxPatchDataset(Dataset):
             self.size,
         )
 
-        bbox_yolo = (
+        bbox_yolo = clamp_yolo_bbox(
             float(row["xc"]),
             float(row["yc"]),
             float(row["w"]),
@@ -217,9 +215,8 @@ class BboxEvalDataset(FullImageDataset):
         ph = pw = self.patch_size
         origins: list[tuple[int, int]] = []
         for xc, yc, bw, bh in zip(sub["xc"], sub["yc"], sub["w"], sub["h"]):
-            min_r, min_c, max_r, max_c = normed_box_to_pixels(
-                float(xc), float(yc), float(bw), float(bh), h, w
-            )
+            xc, yc, bw, bh = clamp_yolo_bbox(float(xc), float(yc), float(bw), float(bh))
+            min_r, min_c, max_r, max_c = normed_box_to_pixels(xc, yc, bw, bh, h, w)
             y0, x0 = bbox_covering_patch_top_left(
                 h, w, ph, pw, min_r, min_c, max_r, max_c
             )
