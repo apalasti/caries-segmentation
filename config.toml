@@ -50,7 +50,7 @@ focal_term_weight = 0.8  # Scale of focal term vs other losses (same idea as bce
 focal_ramp_epochs = 0  # Linear ramp 0 → focal_term_weight over this many epochs; 0 = off
 
 # Feature toggles
-early_stopping = true  # Enable early stopping
+early_stopping = false  # Enable early stopping
 early_stopping_patience = 40
 checkpointing = true  # Enable model checkpointing
 lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)

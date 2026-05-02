@@ -12,8 +12,6 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
-from .utils.visualization import plot_training_curves
-from .utils.callbacks import MetricsHistoryCallback
 
 
 def train():
