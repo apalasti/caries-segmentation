@@ -2,7 +2,7 @@ import albumentations as A
 import numpy as np
 
 
-def get_train_transforms(config=None, target_size=(256, 256)):
+def get_train_transforms(config=None, target_size=(256, 256), bbox_aware: bool = False):
     if config is None:
         config = {}
 
@@ -16,6 +16,20 @@ def get_train_transforms(config=None, target_size=(256, 256)):
     scale_prob = config.get("scale_prob", 0.5)
     if scale_prob > 0 and scale_limit > 0:
         transforms.append(A.RandomScale(scale_limit=scale_limit, p=scale_prob))
+
+    translate_limit = config.get("translate_limit", 0.2)
+    translate_prob = config.get("translate_prob", 0.5)
+    if translate_prob > 0 and translate_limit > 0:
+        transforms.append(
+            A.Affine(
+                translate_percent={
+                    "x": (-translate_limit, translate_limit),
+                    "y": (-translate_limit, translate_limit),
+                },
+                cval=0,
+                p=translate_prob,
+            )
+        )
 
     elastic_alpha = config.get("elastic_alpha", 30)
     elastic_sigma = config.get("elastic_sigma", 5)
@@ -46,7 +60,15 @@ def get_train_transforms(config=None, target_size=(256, 256)):
             A.Resize(height=target_size[0], width=target_size[1], interpolation=1)
         )
 
-    return A.Compose(transforms) if transforms else None
+    if not transforms:
+        return None
+
+    if bbox_aware:
+        return A.Compose(
+            transforms,
+            bbox_params=A.BboxParams(format="yolo", label_fields=[]),
+        )
+    return A.Compose(transforms)
 
 
 def get_val_transforms(target_size=(256, 256)):

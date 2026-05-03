@@ -78,9 +78,7 @@ def visualize_prediction(img, gt_mask, pred_mask, save_path=None):
     plt.close()
 
 
-def plot_training_curves(logs, save_dir):
-    os.makedirs(save_dir, exist_ok=True)
-
+def plot_training_curves(logs, save_path):
     epochs = range(1, len(logs.get("train_loss", [])) + 1)
     plt.figure()
 
@@ -95,10 +93,6 @@ def plot_training_curves(logs, save_dir):
     plt.ylabel("Metric")
     plt.legend()
     plt.grid(True)
-
-    # Abszolút útvonal
-    abs_save_dir = os.path.abspath(save_dir)
-    save_path = os.path.join(abs_save_dir, "training_curves.png")
 
     try:
         plt.savefig(save_path)

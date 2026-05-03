@@ -3,67 +3,76 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.loggers import CSVLogger, WandbLogger
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from .config import load_config
-from .data.lightning_datamodule import SegmentationDataModule
+from .data.dataset import BboxEvalDataset
+from .data.lightning_datamodule import load_bboxes_df, load_split_pairs
 from .models.lightning_model import SegmentationLightningModule
-
-from .config import load_config
-from .data.lightning_datamodule import SegmentationDataModule
-from .models.lightning_model import SegmentationLightningModule
-from .utils.visualization import sample_test_predictions, visualize_prediction, plot_confusion_matrix, plot_metrics_bars
+from .utils.visualization import plot_confusion_matrix, plot_metrics_bars
 
 
-def evaluate(max_samples=5, threshold=0.5):
+def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
+    del max_samples
     config = load_config()
 
     seed = config["training"].get("seed", 42)
     pl.seed_everything(seed, workers=True)
 
-    try:
-        logger = WandbLogger(
-            project=config["wandb"]["project"],
-            config=config,
-        )
-    except Exception:
-        logger = CSVLogger(
-            save_dir=config["training"]["output_dir"],
-            name="csv_logs",
-        )
-
-    data_module = SegmentationDataModule(config)
-    data_module.setup("test")
-
-    model = SegmentationLightningModule(config)
-
-    best_model_path = f"{config['training']['output_dir']}/best_model.ckpt"
+    best_model_path = f"{config['training']['output_dir']}/pious-surf-49.ckpt"
     model = SegmentationLightningModule.load_from_checkpoint(best_model_path, config=config)
-    model.eval()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    print("device", device)
     model.to(device)
+    model.eval()
 
-    # Mappák létrehozása
-    save_dir = Path(__file__).parent.parent / "docs/typst/figures/evaluation"
-    print("saving eval to ",save_dir)
+    save_dir = Path(__file__).parent.parent / "."
+    print("saving eval to ", save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
-    samples = sample_test_predictions(model, data_module.test_dataloader(), max_samples=max_samples, device=device)
-    for i, (img, gt_mask, pred_mask) in enumerate(samples):
-        visualize_prediction(img, gt_mask, pred_mask, save_path=os.path.join(save_dir, f"sample_{i}.png"))
+    preprocessed_path = config["data"]["preprocessed_path"]
+    size = tuple(config["data"].get("images_size", [256, 256]))
+    patch_size = int(config["data"].get("patch_size", min(size)))
+
+    bboxes_csv_path = (
+        Path(bboxes_csv)
+        if bboxes_csv is not None
+        else Path(__file__).resolve().parents[1] / "data" / "preprocessed" / "bboxes.csv"
+    )
+    test_images_df = load_split_pairs(
+        preprocessed_path, "test", config["data"].get("sources", [])
+    )
+    dataset = BboxEvalDataset(
+        images_df=test_images_df,
+        bboxes_df=load_bboxes_df(str(bboxes_csv_path)),
+        size=size,
+        patch_size=patch_size,
+    )
+    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
     TP = FP = TN = FN = 0
-    for batch in data_module.test_dataloader():
-        images, masks = batch
-        images = images.to(device)
-        masks = masks.to(device)
-        with torch.no_grad():
-            preds = torch.sigmoid(model(images)) > threshold
 
-        TP += ((preds == 1) & (masks == 1)).sum().item()
-        TN += ((preds == 0) & (masks == 0)).sum().item()
-        FP += ((preds == 1) & (masks == 0)).sum().item()
-        FN += ((preds == 0) & (masks == 1)).sum().item()
+    for batch in tqdm(loader, total=len(loader)):
+        batch_on_device = {
+            k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+            for k, v in batch.items()
+        }
+        with torch.no_grad():
+            logits, _, masks = model._forward_full(batch_on_device)
+        probs = torch.sigmoid(logits)
+        preds = probs > threshold
+        gts = masks > 0.5
+
+        TP += ((preds == 1) & (gts == 1)).sum().item()
+        TN += ((preds == 0) & (gts == 0)).sum().item()
+        FP += ((preds == 1) & (gts == 0)).sum().item()
+        FN += ((preds == 0) & (gts == 1)).sum().item()
 
     metrics = {
         "TP": TP,
@@ -76,15 +85,11 @@ def evaluate(max_samples=5, threshold=0.5):
         "iou": TP / (TP + FP + FN + 1e-8)
     }
 
-    # 3. Confusion matrix ábrázolása és mentése
     plot_confusion_matrix(metrics, save_path=str(save_dir / "confusion_matrix.png"))
-    plot_metrics_bars(metrics,save_dir)
+    plot_metrics_bars(metrics, save_dir)
     print("Evaluation finished. Metrics:")
     for k, v in metrics.items():
         print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
-
-    if isinstance(logger, WandbLogger):
-        logger.experiment.finish()
 
 
 if __name__ == "__main__":

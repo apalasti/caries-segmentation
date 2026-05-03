@@ -4,18 +4,28 @@ name = "caries-segmentation"
 [data]
 preprocessed_path = "data/preprocessed"
 # sources = ["DC1000"]  # Filter by source in data.csv, empty = all
-images_size = [256, 256]
+
+# Resize canvas before cropping; each dimension must be >= patch_size when patch training is on.
+#images_size = [256, 256]
+images_size = [640, 640]
+
+# Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
+# When set, train samples one patch, val/test evaluate stitched full-image predictions from patch sets.
+patch_size = 128
+
+# Train only: probability of mask-focused crop vs uniform random crop (empty mask falls back to random).
+focused_crop_prob = 0.8
 
 [model]
 n_channels = 1
 n_classes = 1
-depth = 1
+depth = 4
 base_channels = 64
 dropout = 0.2
 
 [training]
-epochs = 500
-batch_size = 64
+epochs = 100
+batch_size = 128
 learning_rate = 1e-4
 weight_decay = 1e-4
 num_workers = 4
@@ -23,13 +33,24 @@ output_dir = "checkpoints"
 seed = 42
 shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
-# Focal Loss config
+# Active loss terms: any of "bce", "focal", "dice" (not both bce and focal)
+losses = ["focal", "dice"]
+
+# BCE (only if "bce" is in losses)
+# Per-class positive weights for BCEWithLogitsLoss; length must match model.n_classes.
+bce_pos_weight = [50.0]
+bce_ramp_epochs = 50  # Linear ramp: BCE multiplier 0 at epoch 0 → 1.0 at this epoch; 0 = disabled
+bce_term_weight = 0.1  # Asymptotic scale on BCE after ramp (also when ramp is off)
+
+# Focal Loss (only if "focal" is in losses)
 focal_gamma = 2.0
-focal_alpha = 0.99
-dice_weight = [1.0, 100.0]
+# Per-channel class balance; length must match model.n_classes (scalar is normalized to one value).
+focal_alpha = 0.85
+focal_term_weight = 0.8  # Scale of focal term vs other losses (same idea as bce_term_weight)
+focal_ramp_epochs = 0  # Linear ramp 0 → focal_term_weight over this many epochs; 0 = off
 
 # Feature toggles
-early_stopping = true  # Enable early stopping
+early_stopping = false  # Enable early stopping
 early_stopping_patience = 40
 checkpointing = true  # Enable model checkpointing
 lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
@@ -39,14 +60,19 @@ lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
 [augmentation]
 enabled = true
 horizontal_flip_prob = 0.5
-scale_prob = 0
+scale_prob = 0.5
 scale_limit = 0.2
-brightness_limit = 0.2
-contrast_limit = 0.2
+translate_prob = 0.5
+translate_limit = 0.2
 brightness_contrast_prob = 0.5
+brightness_limit = 0.1
+contrast_limit = 0.1
+elastic_prob = 0.3
 elastic_alpha = 30
 elastic_sigma = 5
-elastic_prob = 0
+
+[evaluation]
+lesion_detection_threshold = 0.5  # 50% intersection threshold for caries detection
 
 [wandb]
 project = "caries-segmentation"

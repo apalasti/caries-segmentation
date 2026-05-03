@@ -1,11 +1,10 @@
 import os
-import pandas as pd
+
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
-    DeviceStatsMonitor,
     RichProgressBar,
 )
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
@@ -13,9 +12,9 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from .config import load_config
 from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
-from .utils.visualization import plot_training_curves
-from .utils.callbacks import MetricsHistoryCallback
-from pathlib import Path
+from .utils.callbacks import StepTimingCallback
+
+
 def train():
     config = load_config()
 
@@ -36,6 +35,7 @@ def train():
         logger = CSVLogger(
             save_dir=config["training"]["output_dir"],
             name="csv_logs",
+            flush_logs_every_n_steps=10,
         )
 
     os.makedirs(config["training"]["output_dir"], exist_ok=True)
@@ -49,36 +49,37 @@ def train():
     model = SegmentationLightningModule(config)
 
     callbacks = []
+    checkpoint_callback = None
 
-    if config["training"].get("checkpointing", True):
+    if config["training"].get("checkpointing", True) and 0 < config["training"].get(
+        "limit_val_batches", 1
+    ):
         checkpoint_callback = ModelCheckpoint(
             dirpath=config["training"]["output_dir"],
             filename="best_model",
-            monitor="val/dice_loss",
-            mode="min",
+            monitor="val/dice",
+            mode="max",
             save_top_k=1,
             verbose=True,
             save_last=True
         )
         callbacks.append(checkpoint_callback)
 
-    if config["training"].get("early_stopping", True):
+    if config["training"].get("early_stopping", True) and 0 < config["training"].get(
+        "limit_val_batches", 1
+    ):
         early_stop_callback = EarlyStopping(
-            monitor="val/dice_loss",
+            monitor="val/dice",
             patience=config["training"].get("early_stopping_patience", 10),
-            mode="min",
+            mode="max",
             verbose=True,
         )
         callbacks.append(early_stop_callback)
 
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
-    metrics_cb = MetricsHistoryCallback()
-
-    callbacks.append(metrics_cb)
-
-    # callbacks.append(DeviceStatsMonitor())
     callbacks.append(RichProgressBar())
+    callbacks.append(StepTimingCallback())
 
     trainer = pl.Trainer(
         max_epochs=config["training"].get("epochs", 50),
@@ -97,13 +98,11 @@ def train():
 
     trainer.fit(model, datamodule=data_module)
 
-    save_dir = Path(__file__).parent.parent / "docs/typst/figures/training"
-    plot_training_curves({
-        "train_loss": metrics_cb.train_loss,
-        "val_loss": metrics_cb.val_loss,
-       # "val_dice": metrics_cb.val_dice,
-       #"val_iou": metrics_cb.val_iou,
-    }, save_dir=str(save_dir))
+    if checkpoint_callback is not None:
+        trainer.test(datamodule=data_module, ckpt_path="best")
+    else:
+        # Fall back to last in-memory weights when no val-based checkpoint exists.
+        trainer.test(model=model, datamodule=data_module)
 
     if isinstance(logger, WandbLogger):
         logger.experiment.finish()
