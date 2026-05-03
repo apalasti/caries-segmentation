@@ -7,7 +7,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 from ..data.cropping import clamp_fill_for_dtype, cut_patches_from_canvas, stitch_patches
 from ..utils.focal_loss import FocalLoss
-from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff
+from ..utils.metrics import DiceLoss, dice_coeff, iou_coeff, compute_lesion_level_metrics_batch
 from .unet import UNet
 
 
@@ -94,6 +94,7 @@ class SegmentationLightningModule(pl.LightningModule):
 
         self.learning_rate = config["training"].get("learning_rate", 5e-4)
         self.weight_decay = config["training"].get("weight_decay", 1e-4)
+        self.caries_threshold = config.get("evaluation", {}).get("lesion_detection_threshold", 0.5)
 
     def forward(self, x):
         return self.model(x)
@@ -296,6 +297,23 @@ class SegmentationLightningModule(pl.LightningModule):
             prog_bar=True,
         )
 
+        # Compute lesion-level detection metrics
+        preds_bin = (torch.sigmoid(preds) > 0.5).float()
+        lesion_metrics = compute_lesion_level_metrics_batch(
+            preds_bin[:, 0], masks[:, 0], threshold=self.caries_threshold
+        )
+        tp = lesion_metrics["true_positive"]
+        fp = lesion_metrics["false_positive"]
+        fn = lesion_metrics["false_negative"]
+
+        recall = tp / (tp + fn + 1e-8)
+        precision = tp / (tp + fp + 1e-8)
+        f1 = 2 * precision * recall / (precision + recall + 1e-8)
+
+        self.log("val/lesion_recall", recall, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/lesion_precision", precision, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/lesion_f1", f1, on_step=False, on_epoch=True, prog_bar=False)
+
         if batch_idx == 0:
             self._log_predictions(images, masks, preds, prefix="val")
 
@@ -305,11 +323,6 @@ class SegmentationLightningModule(pl.LightningModule):
         logits, images, masks = self._forward_full(batch)
 
         loss, parts, *_ = self._compute_loss(logits, masks)
-        probs = torch.sigmoid(logits)
-        preds_bin = (probs > 0.5).int()
-
-        self.test_preds.append(preds_bin.cpu())
-        self.test_targets.append(masks.int().cpu())
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         for name, val in parts.items():
@@ -325,6 +338,23 @@ class SegmentationLightningModule(pl.LightningModule):
         dice_score = dice_coeff(logits, masks)
         self.log("test/iou", iou, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/dice", dice_score, on_step=False, on_epoch=True, prog_bar=True)
+
+        # Compute lesion-level detection metrics
+        preds_bin = (torch.sigmoid(logits) > 0.5).float()
+        lesion_metrics = compute_lesion_level_metrics_batch(
+            preds_bin[:, 0], masks[:, 0], threshold=self.caries_threshold
+        )
+        tp = lesion_metrics["true_positive"]
+        fp = lesion_metrics["false_positive"]
+        fn = lesion_metrics["false_negative"]
+
+        recall = tp / (tp + fn + 1e-8)
+        precision = tp / (tp + fp + 1e-8)
+        f1 = 2 * precision * recall / (precision + recall + 1e-8)
+
+        self.log("test/lesion_recall", recall, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/lesion_precision", precision, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/lesion_f1", f1, on_step=False, on_epoch=True, prog_bar=False)
 
         if batch_idx == 0:
             self._log_predictions(images, masks, logits, prefix="val")

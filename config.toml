@@ -71,6 +71,9 @@ elastic_prob = 0.3
 elastic_alpha = 30
 elastic_sigma = 5
 
+[evaluation]
+lesion_detection_threshold = 0.5  # 50% intersection threshold for caries detection
+
 [wandb]
 project = "caries-segmentation"
 entity = ""
