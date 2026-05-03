@@ -46,6 +46,7 @@ class StepTimingCallback(Callback):
             f"time/{phase}/{kind}",
             duration,
             on_epoch=True,
+            on_step=False,
             prog_bar=False,
             reduce_fx=torch.mean,
         )
