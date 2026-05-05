@@ -54,3 +54,4 @@ dist/
 .ipynb_checkpoints/
 *.pdf
 .typst_cache/
+outputs/

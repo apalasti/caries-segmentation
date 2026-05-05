@@ -132,7 +132,7 @@ def handle_roboflow(row) -> bool:
 
 def main():
     shutil.rmtree(PREPROCESSED_DIR, ignore_errors=True)
-    PREPROCESSED_DIR.mkdir(exist_ok=True)
+    PREPROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
     df = pd.DataFrame(
         {
@@ -156,14 +156,24 @@ def main():
     )
 
     n_before_dedup: int = (df["source"] == "roboflow").sum()
-    df["_dedup_key"] = df["original"].apply(
-        lambda p: name.split(".rf.", 1)[0] if ".rf." in (name := pathlib.Path(p).name) else p
-    )
+    
+    def get_base_name(p: str) -> str:
+        name = pathlib.Path(p).name
+        if ".rf." in name:
+            name = name.split(".rf.")[0]
+        if "_aug" in name:
+            name = name.split("_aug")[0]
+        return name
+
+    df["is_aug"] = df["original"].apply(lambda p: "_aug" in pathlib.Path(p).name)
+    df["_dedup_key"] = df["original"].apply(get_base_name)
+    
     df = (
-        df.sort_values("original", kind="mergesort")
+        df.sort_values(["is_aug", "original"], kind="mergesort")
         .drop_duplicates(subset="_dedup_key", keep="first")
-        .drop(columns=["_dedup_key"])
+        .drop(columns=["_dedup_key", "is_aug"])
     )
+    
     n_after_dedup: int = (df["source"] == "roboflow").sum()
     print(
         f"Roboflow .rf.* dedup: dropped {n_before_dedup - n_after_dedup} duplicate row(s) out of {n_before_dedup}"
