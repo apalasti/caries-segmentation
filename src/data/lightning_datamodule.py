@@ -87,7 +87,7 @@ class SegmentationDataModule(pl.LightningDataModule):
 
         pin_memory = bool(training_cfg.get("pin_memory", torch.cuda.is_available()))
         persistent_workers = bool(training_cfg.get("persistent_workers", num_workers > 0))
-        prefetch_factor = training_cfg.get("prefetch_factor", 2 if num_workers > 0 else None)
+        prefetch_factor = training_cfg.get("prefetch_factor", 4 if num_workers > 0 else None)
         timeout = int(training_cfg.get("dataloader_timeout", 30))
 
         kwargs: dict = {
