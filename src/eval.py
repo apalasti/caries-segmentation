@@ -36,7 +36,7 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
     print("saving eval to ", save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
-    preprocessed_path = config["data"]["preprocessed_path"]
+    dataset_csv = config["data"]["dataset_csv"]
     size = tuple(config["data"].get("images_size", [256, 256]))
     patch_size = int(config["data"].get("patch_size", min(size)))
 
@@ -46,7 +46,7 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
         else Path(__file__).resolve().parents[1] / "data" / "preprocessed" / "bboxes.csv"
     )
     test_images_df = load_split_pairs(
-        preprocessed_path, "test", config["data"].get("sources", [])
+        dataset_csv, "test", config["data"].get("sources", [])
     )
     dataset = BboxEvalDataset(
         images_df=test_images_df,

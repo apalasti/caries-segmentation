@@ -2,7 +2,7 @@
 name = "caries-segmentation"
 
 [data]
-preprocessed_path = "data/preprocessed"
+dataset_csv = "data/preprocessed/dataset.csv"
 #sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 
 # Resize canvas before cropping; each dimension must be >= patch_size when patch training is on.
