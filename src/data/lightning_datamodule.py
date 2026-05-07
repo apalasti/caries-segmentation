@@ -132,24 +132,29 @@ class SegmentationDataModule(pl.LightningDataModule):
                 images_df=val_pairs,
                 bboxes_df=bboxes_df,
                 patch_size=self.patch_size,
+                max_height=640,
             )
             self.test_dataset = BboxEvalDataset(
                 images_df=test_pairs,
                 bboxes_df=bboxes_df,
                 patch_size=self.patch_size,
+                max_height=640,
             )
         else:
             self.train_dataset = FullImageDataset(
                 train_pairs,
                 transform=self.train_transform,
+                size=None,
             )
             self.val_dataset = FullImageDataset(
                 val_pairs,
                 transform=self.val_transform,
+                size=None,
             )
             self.test_dataset = FullImageDataset(
                 test_pairs,
                 transform=self.val_transform,
+                size=None,
             )
 
     def train_dataloader(self):

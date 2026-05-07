@@ -29,6 +29,29 @@ def _load_resized_arrays(
     return img_np, mask_np
 
 
+def _load_resized_arrays_keep_aspect_max_height(
+    image_path: str, mask_path: str, *, max_height: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Load grayscale image/mask, resizing to max_height while preserving aspect ratio."""
+    if max_height <= 0:
+        raise ValueError(f"max_height must be positive, got {max_height}")
+
+    img = Image.open(image_path).convert("L")
+    mask = Image.open(mask_path).convert("L")
+
+    w, h = img.size
+    if h > max_height:
+        scale = float(max_height) / float(h)
+        new_w = max(1, int(round(w * scale)))
+        new_h = int(max_height)
+        img = img.resize((new_w, new_h), resample=Image.BILINEAR)
+        mask = mask.resize((new_w, new_h), resample=Image.NEAREST)
+
+    img_np = np.array(img).astype(np.float32) / 255.0
+    mask_np = (np.array(mask) > 0).astype(np.float32)
+    return img_np, mask_np
+
+
 def _arrays_to_tensors(
     img_np: np.ndarray, mask_np: np.ndarray
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -48,18 +71,23 @@ class FullImageDataset(Dataset):
         self,
         images_df: pd.DataFrame,
         transform: Any = None,
+        *,
+        size: tuple[int, int] | None = None,
     ):
         self.images_df = images_df.reset_index(drop=True).copy()
         self.images_df = self.images_df.set_index("id", drop=False)
 
         self.transform = transform
+        self.size = size
 
     def __len__(self) -> int:
         return len(self.images_df)
 
     def __getitem__(self, i: int) -> dict[str, Any]:
         row = self.images_df.iloc[i]
-        img_np, mask_np = _load_resized_arrays(row["image_path"], row["mask_path"])
+        img_np, mask_np = _load_resized_arrays(
+            row["image_path"], row["mask_path"], size=self.size
+        )
 
         if self.transform is not None:
             augmented = self.transform(image=img_np, mask=mask_np)
@@ -239,12 +267,15 @@ class BboxEvalDataset(FullImageDataset):
         images_df: pd.DataFrame,
         bboxes_df: pd.DataFrame,
         patch_size: int = 128,
+        *,
+        max_height: int = 640,
     ):
         if patch_size <= 0:
             raise ValueError(f"patch_size must be positive, got {patch_size}")
 
-        super().__init__(images_df=images_df, transform=None)
+        super().__init__(images_df=images_df, transform=None, size=None)
         self.patch_size = int(patch_size)
+        self.max_height = int(max_height)
 
         bbox_df = bboxes_df[bboxes_df["id"].isin(self.images_df.index)].copy()
         self.bboxes_grouped = bbox_df.groupby("id", sort=False)[
@@ -273,10 +304,16 @@ class BboxEvalDataset(FullImageDataset):
         return torch.tensor(origins, dtype=torch.long)
 
     def __getitem__(self, i: int) -> dict[str, Any]:
-        item = super().__getitem__(i)
-        _, h, w = item["image"].shape
-        item["origins_yx"] = self._origins_for_id(item["id"], int(h), int(w))
-        item["patch_hw"] = torch.tensor(
-            [self.patch_size, self.patch_size], dtype=torch.long
+        row = self.images_df.iloc[i]
+        image_id = str(row["id"])
+
+        img_np, mask_np = _load_resized_arrays_keep_aspect_max_height(
+            row["image_path"], row["mask_path"], max_height=self.max_height
         )
+        img_t, mask_t = _arrays_to_tensors(img_np, mask_np)
+        _, h, w = img_t.shape
+
+        item: dict[str, Any] = {"id": image_id, "image": img_t, "mask": mask_t}
+        item["origins_yx"] = self._origins_for_id(image_id, int(h), int(w))
+        item["patch_hw"] = torch.tensor([self.patch_size, self.patch_size], dtype=torch.long)
         return item
