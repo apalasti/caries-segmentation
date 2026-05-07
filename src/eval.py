@@ -1,27 +1,28 @@
+import argparse
 import os
 from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .config import load_config
-from .data.dataset import BboxEvalDataset
-from .data.lightning_datamodule import load_bboxes_df, load_split_pairs
+from .data.lightning_datamodule import SegmentationDataModule
 from .models.lightning_model import SegmentationLightningModule
+from .utils.metrics import compute_lesion_level_metrics_batch
 from .utils.visualization import plot_confusion_matrix, plot_metrics_bars
 
 
-def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
-    del max_samples
+def evaluate(checkpoint: str | None = None, threshold: float = 0.5):
     config = load_config()
 
     seed = config["training"].get("seed", 42)
     pl.seed_everything(seed, workers=True)
 
-    best_model_path = f"{config['training']['output_dir']}/pious-surf-49.ckpt"
-    model = SegmentationLightningModule.load_from_checkpoint(best_model_path, config=config)
+    if checkpoint is None:
+        checkpoint = os.path.join(config["training"]["output_dir"], "best_model.ckpt")
+    model = SegmentationLightningModule.load_from_checkpoint(checkpoint, config=config)
+
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
@@ -33,30 +34,17 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
     model.eval()
 
     save_dir = Path(__file__).parent.parent / "."
-    print("saving eval to ", save_dir)
+    print("saving eval to", save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
-    dataset_csv = config["data"]["dataset_csv"]
-    size = tuple(config["data"].get("images_size", [256, 256]))
-    patch_size = int(config["data"].get("patch_size", min(size)))
+    data_module = SegmentationDataModule(config)
+    data_module.setup()
+    loader = data_module.test_dataloader()
 
-    bboxes_csv_path = (
-        Path(bboxes_csv)
-        if bboxes_csv is not None
-        else Path(__file__).resolve().parents[1] / "data" / "preprocessed" / "bboxes.csv"
-    )
-    test_images_df = load_split_pairs(
-        dataset_csv, "test", config["data"].get("sources", [])
-    )
-    dataset = BboxEvalDataset(
-        images_df=test_images_df,
-        bboxes_df=load_bboxes_df(str(bboxes_csv_path)),
-        size=size,
-        patch_size=patch_size,
-    )
-    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    lesion_threshold = config.get("evaluation", {}).get("lesion_detection_threshold", 0.5)
 
     TP = FP = TN = FN = 0
+    lesion_TP = lesion_FP = lesion_FN = 0
 
     for batch in tqdm(loader, total=len(loader)):
         batch_on_device = {
@@ -65,6 +53,7 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
         }
         with torch.no_grad():
             logits, _, masks = model._forward_full(batch_on_device)
+
         probs = torch.sigmoid(logits)
         preds = probs > threshold
         gts = masks > 0.5
@@ -74,6 +63,18 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
         FP += ((preds == 1) & (gts == 0)).sum().item()
         FN += ((preds == 0) & (gts == 1)).sum().item()
 
+        preds_bin = preds.float()
+        lesion_metrics = compute_lesion_level_metrics_batch(
+            preds_bin[:, 0], masks[:, 0], threshold=lesion_threshold
+        )
+        lesion_TP += lesion_metrics["true_positive"]
+        lesion_FP += lesion_metrics["false_positive"]
+        lesion_FN += lesion_metrics["false_negative"]
+
+    lesion_recall = lesion_TP / (lesion_TP + lesion_FN + 1e-8)
+    lesion_precision = lesion_TP / (lesion_TP + lesion_FP + 1e-8)
+    lesion_f1 = 2 * lesion_precision * lesion_recall / (lesion_precision + lesion_recall + 1e-8)
+
     metrics = {
         "TP": TP,
         "TN": TN,
@@ -82,15 +83,33 @@ def evaluate(max_samples=5, threshold=0.5, bboxes_csv=None):
         "precision": TP / (TP + FP + 1e-8),
         "recall": TP / (TP + FN + 1e-8),
         "dice": 2 * TP / (2 * TP + FP + FN + 1e-8),
-        "iou": TP / (TP + FP + FN + 1e-8)
+        "iou": TP / (TP + FP + FN + 1e-8),
+        "lesion_recall": lesion_recall,
+        "lesion_precision": lesion_precision,
+        "lesion_f1": lesion_f1,
     }
 
     plot_confusion_matrix(metrics, save_path=str(save_dir / "confusion_matrix.png"))
     plot_metrics_bars(metrics, save_dir)
+
     print("Evaluation finished. Metrics:")
     for k, v in metrics.items():
-        print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
+        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
 
 if __name__ == "__main__":
-    evaluate()
+    parser = argparse.ArgumentParser(description="Evaluate a trained segmentation model.")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to model checkpoint (.ckpt). Defaults to <output_dir>/best_model.ckpt.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Binary prediction threshold (default: 0.5).",
+    )
+    args = parser.parse_args()
+    evaluate(checkpoint=args.checkpoint, threshold=args.threshold)
