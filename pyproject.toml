@@ -8,7 +8,9 @@ dependencies = [
     "albumentations>=1.4.0",
     "lightning>=2.6.1",
     "numpy>=2.4.3",
-    "opencv-python>=4.13.0.92",
+    # Headless build avoids X11 deps (e.g. libxcb) on HPC/containers.
+    # Roboflow pins this exact version, so keep them compatible.
+    "opencv-python-headless==4.10.0.84",
     "pandas<3.0.0",
     "pillow>=12.1.1",
     "psutil>=7.2.2",
