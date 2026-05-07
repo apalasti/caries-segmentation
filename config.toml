@@ -6,15 +6,15 @@ preprocessed_path = "data/preprocessed"
 # sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 
 # Resize canvas before cropping; each dimension must be >= patch_size when patch training is on.
-#images_size = [256, 256]
+images_size = [256, 256]
 #images_size = [640, 640]
 
 # Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
 # When set, train samples one patch, val/test evaluate stitched full-image predictions from patch sets.
-patch_size = 128
+#patch_size = 128
 
 # Fraction of positive (caries) samples in each training batch for patch-based training
-train_pos_fraction = 0.8
+#train_pos_fraction = 0.8
 
 # Train only: probability of mask-focused crop vs uniform random crop (empty mask falls back to random).
 # focused_crop_prob = 0.8
@@ -57,7 +57,7 @@ early_stopping = false  # Enable early stopping
 early_stopping_patience = 40
 checkpointing = true  # Enable model checkpointing
 lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
-limit_train_batches = 15  # Number of train batches (if commented out use all)
+# limit_train_batches = 15  # Number of train batches (if commented out use all)
 # limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [augmentation]
