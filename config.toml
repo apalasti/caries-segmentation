@@ -11,7 +11,7 @@ preprocessed_path = "data/preprocessed"
 
 # Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
 # When set, train samples one patch, val/test evaluate stitched full-image predictions from patch sets.
-patch_size = 100
+patch_size = 96
 
 # Fraction of positive (caries) samples in each training batch for patch-based training
 train_pos_fraction = 0.8
