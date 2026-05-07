@@ -268,14 +268,13 @@ class BboxEvalDataset(FullImageDataset):
         bboxes_df: pd.DataFrame,
         patch_size: int = 128,
         *,
-        max_height: int = 640,
+        size: int = (256, 256),
     ):
         if patch_size <= 0:
             raise ValueError(f"patch_size must be positive, got {patch_size}")
 
-        super().__init__(images_df=images_df, transform=None, size=None)
+        super().__init__(images_df=images_df, transform=None, size=size)
         self.patch_size = int(patch_size)
-        self.max_height = int(max_height)
 
         bbox_df = bboxes_df[bboxes_df["id"].isin(self.images_df.index)].copy()
         self.bboxes_grouped = bbox_df.groupby("id", sort=False)[
@@ -304,16 +303,10 @@ class BboxEvalDataset(FullImageDataset):
         return torch.tensor(origins, dtype=torch.long)
 
     def __getitem__(self, i: int) -> dict[str, Any]:
-        row = self.images_df.iloc[i]
-        image_id = str(row["id"])
-
-        img_np, mask_np = _load_resized_arrays_keep_aspect_max_height(
-            row["image_path"], row["mask_path"], max_height=self.max_height
+        item = super().__getitem__(i)
+        _, h, w = item["image"].shape
+        item["origins_yx"] = self._origins_for_id(item["id"], int(h), int(w))
+        item["patch_hw"] = torch.tensor(
+            [self.patch_size, self.patch_size], dtype=torch.long
         )
-        img_t, mask_t = _arrays_to_tensors(img_np, mask_np)
-        _, h, w = img_t.shape
-
-        item: dict[str, Any] = {"id": image_id, "image": img_t, "mask": mask_t}
-        item["origins_yx"] = self._origins_for_id(image_id, int(h), int(w))
-        item["patch_hw"] = torch.tensor([self.patch_size, self.patch_size], dtype=torch.long)
         return item

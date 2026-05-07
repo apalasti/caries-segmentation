@@ -54,7 +54,10 @@ class SegmentationDataModule(pl.LightningDataModule):
         self.sources = config["data"].get("sources", [])
         self.batch_size = config["training"].get("batch_size", 32)
         self.num_workers = config["training"].get("num_workers", 4)
-        self.size = tuple(config["data"].get("images_size", [256, 256]))
+
+        self.size = config["data"].get("images_size", None)
+        if self.size is not None:
+            self.size = tuple(self.size)
 
         raw_patch = config["data"].get("patch_size", None)
         self.patch_size = int(raw_patch) if raw_patch is not None else None
@@ -66,12 +69,6 @@ class SegmentationDataModule(pl.LightningDataModule):
         if self.bbox_mode:
             if self.patch_size <= 0:
                 raise ValueError("data.patch_size must be positive when set.")
-            sh, sw = self.size
-            if sh < self.patch_size or sw < self.patch_size:
-                raise ValueError(
-                    f"data.images_size {self.size} must be >= patch_size {self.patch_size} "
-                    "on each axis."
-                )
 
         aug_config = config.get("augmentation", {})
         self.augmentation_enabled = aug_config.get("enabled", True)
@@ -132,29 +129,29 @@ class SegmentationDataModule(pl.LightningDataModule):
                 images_df=val_pairs,
                 bboxes_df=bboxes_df,
                 patch_size=self.patch_size,
-                max_height=640,
+                size=self.size,
             )
             self.test_dataset = BboxEvalDataset(
                 images_df=test_pairs,
                 bboxes_df=bboxes_df,
                 patch_size=self.patch_size,
-                max_height=640,
+                size=self.size,
             )
         else:
             self.train_dataset = FullImageDataset(
                 train_pairs,
                 transform=self.train_transform,
-                size=None,
+                size=self.size,
             )
             self.val_dataset = FullImageDataset(
                 val_pairs,
                 transform=self.val_transform,
-                size=None,
+                size=self.size,
             )
             self.test_dataset = FullImageDataset(
                 test_pairs,
                 transform=self.val_transform,
-                size=None,
+                size=self.size,
             )
 
     def train_dataloader(self):

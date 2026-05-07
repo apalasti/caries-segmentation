@@ -3,15 +3,15 @@ name = "caries-segmentation"
 
 [data]
 preprocessed_path = "data/preprocessed"
-# sources = ["DC1000"]  # Filter by source in data.csv, empty = all
+#sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 
 # Resize canvas before cropping; each dimension must be >= patch_size when patch training is on.
 #images_size = [256, 256]
-#images_size = [640, 640]
+images_size = [640, 640]
 
 # Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
 # When set, train samples one patch, val/test evaluate stitched full-image predictions from patch sets.
-patch_size = 96
+patch_size = 128
 
 # Fraction of positive (caries) samples in each training batch for patch-based training
 train_pos_fraction = 0.8
@@ -50,14 +50,14 @@ focal_gamma = 2.0
 # Per-channel class balance; length must match model.n_classes (scalar is normalized to one value).
 focal_alpha = 0.85
 focal_term_weight = 0.8  # Scale of focal term vs other losses (same idea as bce_term_weight)
-focal_ramp_epochs = 0  # Linear ramp 0 → focal_term_weight over this many epochs; 0 = off
+focal_ramp_epochs = 40  # Linear ramp 0 → focal_term_weight over this many epochs; 0 = off
 
 # Feature toggles
 early_stopping = false  # Enable early stopping
 early_stopping_patience = 40
 checkpointing = true  # Enable model checkpointing
 lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
-limit_train_batches = 15  # Number of train batches (if commented out use all)
+limit_train_batches = 10  # Number of train batches (if commented out use all)
 # limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [augmentation]
@@ -66,7 +66,7 @@ horizontal_flip_prob = 0.5
 scale_prob = 0.5
 scale_limit = 0.2
 translate_prob = 0.5
-translate_limit = 0.2
+translate_limit = 0.1
 brightness_contrast_prob = 0.5
 brightness_limit = 0.1
 contrast_limit = 0.1
