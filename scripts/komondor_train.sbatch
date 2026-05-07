@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --account=nr_haml2025
 #SBATCH --partition=gpu
-#SBATCH --time=10:00:00
-#SBATCH --cpus-per-task=8
+#SBATCH --time=05:00:00
+#SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=4000
 #SBATCH --gres=gpu:1
 # GPU: use partition gpu or ai, add e.g. #SBATCH --gres=gpu:1 , and Singularity adds --nv below when SLURM_GPUS_ON_NODE is set.
