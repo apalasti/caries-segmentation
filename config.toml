@@ -14,7 +14,7 @@ images_size = [640, 640]
 patch_size = 128
 
 # Fraction of positive (caries) samples in each training batch for patch-based training
-train_pos_fraction = 0.9
+train_pos_fraction = 0.5
 
 # Train only: probability of mask-focused crop vs uniform random crop (empty mask falls back to random).
 # focused_crop_prob = 0.8
