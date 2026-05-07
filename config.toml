@@ -14,7 +14,7 @@ images_size = [640, 640]
 patch_size = 128
 
 # Fraction of positive (caries) samples in each training batch for patch-based training
-train_pos_fraction = 0.5
+train_pos_fraction = 0.9
 
 # Train only: probability of mask-focused crop vs uniform random crop (empty mask falls back to random).
 # focused_crop_prob = 0.8
@@ -28,7 +28,7 @@ dropout = 0.2
 
 [training]
 epochs = 500
-batch_size = 128
+batch_size = 4
 learning_rate = 1e-4
 weight_decay = 1e-4
 num_workers = 4
@@ -46,9 +46,9 @@ bce_ramp_epochs = 50  # Linear ramp: BCE multiplier 0 at epoch 0 → 1.0 at this
 bce_term_weight = 0.1  # Asymptotic scale on BCE after ramp (also when ramp is off)
 
 # Focal Loss (only if "focal" is in losses)
-focal_gamma = 2.0
+focal_gamma = 2.5
 # Per-channel class balance; length must match model.n_classes (scalar is normalized to one value).
-focal_alpha = 0.85
+focal_alpha = 0.92
 focal_term_weight = 0.8  # Scale of focal term vs other losses (same idea as bce_term_weight)
 focal_ramp_epochs = 0  # Linear ramp 0 → focal_term_weight over this many epochs; 0 = off
 
