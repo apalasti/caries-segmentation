@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=nr_haml2025
-#SBATCH --partition=gpu
+#SBATCH --partition=ai
 #SBATCH --time=07:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=4000
