@@ -15,13 +15,14 @@ from .cropping import (
 
 
 def _load_resized_arrays(
-    image_path: str, mask_path: str, size: tuple[int, int]
+    image_path: str, mask_path: str, size: tuple[int, int] | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     img = Image.open(image_path).convert("L")
     mask = Image.open(mask_path).convert("L")
 
-    img = img.resize(size, resample=Image.BILINEAR)
-    mask = mask.resize(size, resample=Image.NEAREST)
+    if size is not None:
+        img = img.resize(size, resample=Image.BILINEAR)
+        mask = mask.resize(size, resample=Image.NEAREST)
 
     img_np = np.array(img).astype(np.float32) / 255.0
     mask_np = (np.array(mask) > 0).astype(np.float32)
@@ -46,13 +47,11 @@ class FullImageDataset(Dataset):
     def __init__(
         self,
         images_df: pd.DataFrame,
-        size: tuple[int, int] = (256, 256),
         transform: Any = None,
     ):
         self.images_df = images_df.reset_index(drop=True).copy()
         self.images_df = self.images_df.set_index("id", drop=False)
 
-        self.size = (int(size[0]), int(size[1]))
         self.transform = transform
 
     def __len__(self) -> int:
@@ -60,9 +59,7 @@ class FullImageDataset(Dataset):
 
     def __getitem__(self, i: int) -> dict[str, Any]:
         row = self.images_df.iloc[i]
-        img_np, mask_np = _load_resized_arrays(
-            row["image_path"], row["mask_path"], self.size
-        )
+        img_np, mask_np = _load_resized_arrays(row["image_path"], row["mask_path"])
 
         if self.transform is not None:
             augmented = self.transform(image=img_np, mask=mask_np)
@@ -87,22 +84,15 @@ class BboxPatchDataset(Dataset):
         self,
         images_df: pd.DataFrame,
         bboxes_df: pd.DataFrame,
-        size: tuple[int, int] = (256, 256),
         transform: Any = None,
         patch_size: int = 128,
     ):
         if patch_size <= 0:
             raise ValueError(f"patch_size must be positive, got {patch_size}")
-        sh, sw = int(size[0]), int(size[1])
-        if sh < patch_size or sw < patch_size:
-            raise ValueError(
-                f"size ({sh}, {sw}) must be >= patch_size {patch_size}"
-            )
 
         self.images_df = images_df.reset_index(drop=True).copy()
         self.images_df = self.images_df.set_index("id", drop=False)
 
-        self.size = (sh, sw)
         self.transform = transform
         self.patch_size = int(patch_size)
 
@@ -143,7 +133,7 @@ class BboxPatchDataset(Dataset):
         img_np, mask_np = _load_resized_arrays(
             self.images_df.loc[image_id, "image_path"],
             self.images_df.loc[image_id, "mask_path"],
-            self.size,
+            None,
         )
 
         bbox_yolo = clamp_yolo_bbox(
@@ -156,6 +146,10 @@ class BboxPatchDataset(Dataset):
 
         h, w = int(img_np.shape[0]), int(img_np.shape[1])
         ph = pw = self.patch_size
+        if h < ph or w < pw:
+            raise ValueError(
+                f"image {image_id} has shape ({h}, {w}) smaller than patch_size {ph}"
+            )
         min_r, min_c, max_r, max_c = normed_box_to_pixels(
             bbox_yolo[0], bbox_yolo[1], bbox_yolo[2], bbox_yolo[3], h, w
         )
@@ -186,18 +180,12 @@ class BboxEvalDataset(FullImageDataset):
         self,
         images_df: pd.DataFrame,
         bboxes_df: pd.DataFrame,
-        size: tuple[int, int] = (256, 256),
         patch_size: int = 128,
     ):
         if patch_size <= 0:
             raise ValueError(f"patch_size must be positive, got {patch_size}")
-        sh, sw = int(size[0]), int(size[1])
-        if sh < patch_size or sw < patch_size:
-            raise ValueError(
-                f"size ({sh}, {sw}) must be >= patch_size {patch_size}"
-            )
 
-        super().__init__(images_df=images_df, size=(sh, sw), transform=None)
+        super().__init__(images_df=images_df, transform=None)
         self.patch_size = int(patch_size)
 
         bbox_df = bboxes_df[bboxes_df["id"].isin(self.images_df.index)].copy()
@@ -205,14 +193,17 @@ class BboxEvalDataset(FullImageDataset):
             ["xc", "yc", "w", "h"]
         ]
 
-    def _origins_for_id(self, image_id: str) -> torch.Tensor:
+    def _origins_for_id(self, image_id: str, h: int, w: int) -> torch.Tensor:
         gb = self.bboxes_grouped
         if image_id not in gb.groups:
             return torch.zeros((0, 2), dtype=torch.long)
         sub = gb.get_group(image_id)
 
-        h, w = self.size
         ph = pw = self.patch_size
+        if h < ph or w < pw:
+            raise ValueError(
+                f"image {image_id} has shape ({h}, {w}) smaller than patch_size {ph}"
+            )
         origins: list[tuple[int, int]] = []
         for xc, yc, bw, bh in zip(sub["xc"], sub["yc"], sub["w"], sub["h"]):
             xc, yc, bw, bh = clamp_yolo_bbox(float(xc), float(yc), float(bw), float(bh))
@@ -225,7 +216,8 @@ class BboxEvalDataset(FullImageDataset):
 
     def __getitem__(self, i: int) -> dict[str, Any]:
         item = super().__getitem__(i)
-        item["origins_yx"] = self._origins_for_id(item["id"])
+        _, h, w = item["image"].shape
+        item["origins_yx"] = self._origins_for_id(item["id"], int(h), int(w))
         item["patch_hw"] = torch.tensor(
             [self.patch_size, self.patch_size], dtype=torch.long
         )

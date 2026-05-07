@@ -35,6 +35,7 @@ def load_bboxes_df(bboxes_csv_path: str) -> pd.DataFrame:
             "yc": "float64",
             "box_index": "int64",
             "score": "float64",
+            "has_caries": "bool"
         }
     )
 
@@ -85,36 +86,30 @@ class SegmentationDataModule(pl.LightningDataModule):
             self.train_dataset = BboxPatchDataset(
                 images_df=train_pairs,
                 bboxes_df=bboxes_df,
-                size=self.size,
                 transform=self.train_transform,
                 patch_size=self.patch_size,
             )
             self.val_dataset = BboxEvalDataset(
                 images_df=val_pairs,
                 bboxes_df=bboxes_df,
-                size=self.size,
                 patch_size=self.patch_size,
             )
             self.test_dataset = BboxEvalDataset(
                 images_df=test_pairs,
                 bboxes_df=bboxes_df,
-                size=self.size,
                 patch_size=self.patch_size,
             )
         else:
             self.train_dataset = FullImageDataset(
                 train_pairs,
-                size=self.size,
                 transform=self.train_transform,
             )
             self.val_dataset = FullImageDataset(
                 val_pairs,
-                size=self.size,
                 transform=self.val_transform,
             )
             self.test_dataset = FullImageDataset(
                 test_pairs,
-                size=self.size,
                 transform=self.val_transform,
             )
 
