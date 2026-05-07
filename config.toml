@@ -3,7 +3,7 @@ name = "caries-segmentation"
 
 [data]
 preprocessed_path = "data/preprocessed"
-# sources = ["DC1000"]  # Filter by source in data.csv, empty = all
+# sources = ["DC1000"]  # Filter by source in data.csv, empty = all
 
 # Resize canvas before cropping; each dimension must be >= patch_size when patch training is on.
 #images_size = [256, 256]
@@ -11,7 +11,7 @@ preprocessed_path = "data/preprocessed"
 
 # Square patch side in pixels after augmentations; omit or null to use full images_size (no crop).
 # When set, train samples one patch, val/test evaluate stitched full-image predictions from patch sets.
-patch_size = 128
+patch_size = 64
 
 # Fraction of positive (caries) samples in each training batch for patch-based training
 train_pos_fraction = 0.8
