@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
@@ -6,6 +7,7 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
     RichProgressBar,
+    TQDMProgressBar,
 )
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
@@ -78,7 +80,11 @@ def train():
 
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
-    callbacks.append(RichProgressBar())
+    # Rich progress bars don't render well into Slurm stdout files; fall back to TQDM there.
+    if sys.stdout.isatty():
+        callbacks.append(RichProgressBar())
+    else:
+        callbacks.append(TQDMProgressBar(refresh_rate=1))
     callbacks.append(StepTimingCallback())
 
     trainer = pl.Trainer(

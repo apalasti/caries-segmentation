@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import pytorch_lightning as pl
+import torch
 from torch.utils.data import DataLoader
 
 from .augmentations import get_train_transforms, get_val_transforms
@@ -81,6 +82,28 @@ class SegmentationDataModule(pl.LightningDataModule):
         )
         self.val_transform = get_val_transforms(self.size)
 
+    def _dataloader_kwargs(self) -> dict:
+        # Defaults chosen to avoid "silent hangs" on HPC/NFS when worker processes stall.
+        # If you want max throughput, override via config.training.*
+        training_cfg = self.config.get("training", {})
+        num_workers = int(self.num_workers)
+
+        pin_memory = bool(training_cfg.get("pin_memory", torch.cuda.is_available()))
+        persistent_workers = bool(training_cfg.get("persistent_workers", num_workers > 0))
+        prefetch_factor = training_cfg.get("prefetch_factor", 2 if num_workers > 0 else None)
+        timeout = int(training_cfg.get("dataloader_timeout", 30))
+
+        kwargs: dict = {
+            "num_workers": num_workers,
+            "pin_memory": pin_memory,
+            "persistent_workers": persistent_workers if num_workers > 0 else False,
+        }
+        if num_workers > 0 and prefetch_factor is not None:
+            kwargs["prefetch_factor"] = int(prefetch_factor)
+        if num_workers > 0 and 0 < timeout:
+            kwargs["timeout"] = timeout
+        return kwargs
+
     def setup(self, stage=None):
         train_pairs = load_split_pairs(self.preprocessed_path, "train", self.sources)
         val_pairs = load_split_pairs(self.preprocessed_path, "val", self.sources)
@@ -135,8 +158,7 @@ class SegmentationDataModule(pl.LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=shuffle,
-            num_workers=self.num_workers,
-            persistent_workers=self.num_workers > 0,
+            **self._dataloader_kwargs(),
         )
 
     def val_dataloader(self):
@@ -144,8 +166,7 @@ class SegmentationDataModule(pl.LightningDataModule):
             self.val_dataset,
             batch_size=1 if self.bbox_mode else self.batch_size,
             shuffle=False,
-            num_workers=self.num_workers,
-            persistent_workers=self.num_workers > 0,
+            **self._dataloader_kwargs(),
         )
 
     def test_dataloader(self):
@@ -153,6 +174,5 @@ class SegmentationDataModule(pl.LightningDataModule):
             self.test_dataset,
             batch_size=1 if self.bbox_mode else self.batch_size,
             shuffle=False,
-            num_workers=self.num_workers,
-            persistent_workers=self.num_workers > 0,
+            **self._dataloader_kwargs(),
         )
