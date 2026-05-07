@@ -160,6 +160,64 @@ class BboxPatchDataset(Dataset):
         return {"id": image_id, "image": img_t, "mask": mask_t}
 
 
+class MixedCariesBboxPatchDataset(BboxPatchDataset):
+    """Train-only bbox patch dataset with configurable caries ratio.
+
+    Builds an oversampled index map once at construction time, then reuses
+    `BboxPatchDataset.__getitem__` by mapping `i -> mapped_i`.
+    """
+
+    def __init__(
+        self,
+        images_df: pd.DataFrame,
+        bboxes_df: pd.DataFrame,
+        transform: Any = None,
+        patch_size: int = 128,
+        *,
+        pos_fraction: float = 0.2,
+        seed: int = 42,
+    ):
+        super().__init__(
+            images_df=images_df,
+            bboxes_df=bboxes_df,
+            transform=transform,
+            patch_size=patch_size,
+        )
+
+        if "has_caries" not in self.bbox_df.columns:
+            raise ValueError("bboxes_df must contain a boolean 'has_caries' column.")
+        if not (0.0 <= float(pos_fraction) <= 1.0):
+            raise ValueError(f"pos_fraction must be in [0, 1], got {pos_fraction}")
+
+        has_caries = self.bbox_df["has_caries"].astype(bool).to_numpy()
+        pos_idx = np.flatnonzero(has_caries)
+        neg_idx = np.flatnonzero(~has_caries)
+        if len(pos_idx) == 0:
+            raise ValueError("No positive (has_caries=True) bboxes available.")
+        if len(neg_idx) == 0:
+            raise ValueError("No negative (has_caries=False) bboxes available.")
+
+        pos_ratio = len(pos_idx) / (len(pos_idx) + len(neg_idx))
+        neg_ratio = len(neg_idx) / (len(pos_idx) + len(neg_idx))
+        m_pos = int(round(len(pos_idx) * (pos_fraction / pos_ratio)))
+        m_neg = int(round(len(neg_idx) * ((1.0 - pos_fraction) / neg_ratio)))
+
+        rng = np.random.default_rng(int(seed))
+        pos_samples = rng.choice(pos_idx, size=m_pos, replace=True)
+        neg_samples = rng.choice(neg_idx, size=m_neg, replace=True)
+        mixed = np.concatenate([pos_samples, neg_samples]).astype(np.int64, copy=False)
+        rng.shuffle(mixed)
+
+        self._mixed_indices = mixed
+
+    def __len__(self) -> int:
+        return int(self._mixed_indices.shape[0])
+
+    def __getitem__(self, i: int) -> dict[str, Any]:
+        mapped_i = int(self._mixed_indices[int(i)])
+        return super().__getitem__(mapped_i)
+
+
 class BboxEvalDataset(FullImageDataset):
     """Full-image eval dataset that exposes patch metadata for stitched inference.
 

@@ -26,7 +26,7 @@ def get_train_transforms(config=None, target_size=(256, 256), bbox_aware: bool =
                     "x": (-translate_limit, translate_limit),
                     "y": (-translate_limit, translate_limit),
                 },
-                cval=0,
+                fill=0,
                 p=translate_prob,
             )
         )

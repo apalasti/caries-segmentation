@@ -4,7 +4,12 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
 from .augmentations import get_train_transforms, get_val_transforms
-from .dataset import BboxEvalDataset, BboxPatchDataset, FullImageDataset
+from .dataset import (
+    BboxEvalDataset,
+    BboxPatchDataset,
+    FullImageDataset,
+    MixedCariesBboxPatchDataset,
+)
 
 
 def load_split_pairs(preprocessed_path, split: str, sources=None):
@@ -83,12 +88,23 @@ class SegmentationDataModule(pl.LightningDataModule):
 
         if self.bbox_mode:
             bboxes_df = load_bboxes_df(self.bboxes_csv_path)
-            self.train_dataset = BboxPatchDataset(
-                images_df=train_pairs,
-                bboxes_df=bboxes_df,
-                transform=self.train_transform,
-                patch_size=self.patch_size,
-            )
+
+            train_pos_fraction = self.config["data"].get("train_pos_fraction", None)
+            if train_pos_fraction is not None:
+                self.train_dataset = MixedCariesBboxPatchDataset(
+                    images_df=train_pairs,
+                    bboxes_df=bboxes_df,
+                    transform=self.train_transform,
+                    patch_size=self.patch_size,
+                    pos_fraction=train_pos_fraction,
+                )
+            else:
+                self.train_dataset = BboxPatchDataset(
+                    images_df=train_pairs,
+                    bboxes_df=bboxes_df,
+                    transform=self.train_transform,
+                    patch_size=self.patch_size,
+                )
             self.val_dataset = BboxEvalDataset(
                 images_df=val_pairs,
                 bboxes_df=bboxes_df,
