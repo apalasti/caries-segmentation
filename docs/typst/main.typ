@@ -670,7 +670,82 @@ A „YOLO és U-Net architektúra terv” fejezetben bemutatott modell kiérték
 
 A kiválasztás alapját elsősorban a Dice-együttható képezi, mint szegmentációs teljesítménymutató. A legjobb validációs eredményt elérő konfiguráció kerül kiválasztásra, amelyet ezt követően a teszt adathalmazon értékelünk. A kétfázisú architektúra elért eredményeit összevetjük egy U-net baseline modellel, a baseline modell beállításai, keresési tere megegyezik a kétfázisú modell U-net fejével, csak ebben az esetben mellőzzük a Yolo háló használatát.
 
+= Alkalmazásterv
 
+== Backend
+
+A backend egy FastAPI alapú REST API, amely panoráma fogászati röntgenképek feldolgozására szolgál. A rendszer egy `/predict` endpointot biztosít, amely több képet képes egyszerre fogadni multipart/form-data formában.
+
+A feldolgozási pipeline lépései:
+- a feltöltött képek beolvasása UploadFile objektumként
+- képek dekódolása PIL és NumPy segítségével RGB tömbbé
+- szegmentációs modell futtatása (model.predict)
+- mask és overlay generálása
+- eredmény PNG-be kódolása, majd base64 formában visszaküldése
+
+A backend CORS middleware-t használ, így a frontend közvetlenül tud kommunikálni vele localhost környezetben.
+
+== Model
+
+A rendszer egy U-Net alapú szegmentációs architektúrára épül, amely fogszuvasodási régiókat detektál panoráma röntgenképeken. A jelenlegi implementáció egy mock modell, amely ellipszis alakú régiókkal szimulálja a caries területeket, de a pipeline kompatibilis valódi deep learning modellekkel is.
+
+== Frontend (Streamlit UI)
+
+A frontend egy Streamlit alapú interaktív webalkalmazás, amely lehetővé teszi több röntgenkép feltöltését, kezelését és a szegmentációs eredmények vizualizálását.
+
+A rendszer session state alapú, így a feltöltött képek és predikciók a felhasználói munkamenetben megmaradnak.
+
+A frontend fő komponensei:
+- file uploader (több fájl drag & drop feltöltéssel)
+- "Run Segmentation" gomb a modell futtatásához
+- "Remove All Images" gomb az állapot törléséhez
+- képek kiválasztása és megjelenítése
+- eredmények vizualizálása (original + overlay)
+
+A frontend HTTP POST kéréssel kommunikál a backenddel, a képeket bináris formában küldi el, majd a válaszként kapott base64 encoded overlay képeket dekódolja és megjeleníti.
+
+== Funkciók
+
+=== Feltöltés (Drag & Drop)
+A felhasználó több panoráma röntgenképet tölthet fel egyszerre drag & drop segítségével. A Streamlit file uploader kezeli a fájlok beolvasását és session state-be mentését.
+
+=== Szegmentáció futtatása
+A "Run Segmentation" gomb megnyomásával a frontend HTTP POST kérést küld a backend /predict endpointjára. A backend visszaadja a szegmentációs eredményeket, amelyeket a frontend eltárol és megjelenít.
+
+#figure(
+  image("./figures/app/upload_download.PNG", width: 80%),
+  caption: [U-net architekrúrája.],
+)
+
+
+
+=== Eredmények megjelenítése
+A UI két panelen jeleníti meg az adatokat:
+- bal oldalon az eredeti röntgenkép
+- jobb oldalon a szegmentált overlay, amely kiemeli a detektált caries régiókat
+
+#figure(
+  image("./figures/app/result_view.PNG", width: 80%),
+  caption: [U-net architekrúrája.],
+)
+
+=== Képek kezelése (Manage)
+A felhasználó kiválaszthat egy képet egy listából, majd törölheti azt a session state-ből. A törlés frissíti a UI állapotát és a kapcsolódó predikciókat is.
+
+#figure(
+  image("./figures/app/manage_images.PNG", width: 80%),
+  caption: [U-net architekrúrája.],
+)
+
+=== Állapotkezelés
+A rendszer Streamlit session_state-et használ a feltöltött képek, predikciók és aktuális index tárolására, így biztosítva a konzisztens felhasználói élményt a UI újrarenderelése során.
+
+== Kommunikáció
+
+A frontend és backend HTTP alapú kommunikációt használ:
+- kérés: multipart/form-data (képek bináris formában)
+- válasz: JSON (filename, model, base64 overlay)
+- vizualizáció: base64 → PNG → PIL Image
 
   = SOTA MODELLEK
 
