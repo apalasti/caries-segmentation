@@ -114,6 +114,7 @@ class BboxPatchDataset(Dataset):
         bboxes_df: pd.DataFrame,
         transform: Any = None,
         patch_size: int = 128,
+        size: tuple[int, int] | None = None,
     ):
         if patch_size <= 0:
             raise ValueError(f"patch_size must be positive, got {patch_size}")
@@ -123,6 +124,7 @@ class BboxPatchDataset(Dataset):
 
         self.transform = transform
         self.patch_size = int(patch_size)
+        self.size = size
 
         bbox_df = bboxes_df[bboxes_df["id"].isin(self.images_df.index)].copy()
         self.bbox_df = bbox_df.reset_index(drop=True)
@@ -161,7 +163,7 @@ class BboxPatchDataset(Dataset):
         img_np, mask_np = _load_resized_arrays(
             self.images_df.loc[image_id, "image_path"],
             self.images_df.loc[image_id, "mask_path"],
-            None,
+            self.size,
         )
 
         bbox_yolo = clamp_yolo_bbox(
@@ -201,6 +203,7 @@ class MixedCariesBboxPatchDataset(BboxPatchDataset):
         bboxes_df: pd.DataFrame,
         transform: Any = None,
         patch_size: int = 128,
+        size: tuple[int, int] | None = None,
         *,
         pos_fraction: float = 0.2,
         seed: int = 42,
@@ -210,6 +213,7 @@ class MixedCariesBboxPatchDataset(BboxPatchDataset):
             bboxes_df=bboxes_df,
             transform=transform,
             patch_size=patch_size,
+            size=size,
         )
 
         if "has_caries" not in self.bbox_df.columns:

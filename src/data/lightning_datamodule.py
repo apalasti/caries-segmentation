@@ -131,6 +131,7 @@ class SegmentationDataModule(pl.LightningDataModule):
                     bboxes_df=bboxes_df,
                     transform=self.train_transform,
                     patch_size=self.patch_size,
+                    size=self.size,
                     pos_fraction=train_pos_fraction,
                 )
             else:
@@ -139,6 +140,7 @@ class SegmentationDataModule(pl.LightningDataModule):
                     bboxes_df=bboxes_df,
                     transform=self.train_transform,
                     patch_size=self.patch_size,
+                    size=self.size,
                 )
             self.val_dataset = BboxEvalDataset(
                 images_df=val_pairs,
