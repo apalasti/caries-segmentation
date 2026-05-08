@@ -368,7 +368,7 @@ class SegmentationLightningModule(pl.LightningModule):
 
         if self.hparams.get("training", {}).get("lr_scheduler", True):
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode="max", factor=0.5, patience=15, threshold=0.01
+                optimizer, mode="max", factor=0.5, patience=30, threshold=0.005
             )
             return [optimizer], [
                 {
