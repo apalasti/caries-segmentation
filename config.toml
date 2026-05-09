@@ -28,7 +28,7 @@ dropout = 0.3
 
 [training]
 epochs = 500
-batch_size = 256
+batch_size = 128
 learning_rate = 1e-4
 weight_decay = 1e-4
 num_workers = 4
@@ -57,7 +57,7 @@ early_stopping = false  # Enable early stopping
 early_stopping_patience = 40
 checkpointing = true  # Enable model checkpointing
 lr_scheduler = true  # Enable learning rate scheduler (ReduceLROnPlateau)
-limit_train_batches = 10  # Number of train batches (if commented out use all)
+limit_train_batches = 20  # Number of train batches (if commented out use all)
 # limit_val_batches = 0  # Number of val batches (if commented out use all)
 
 [augmentation]
