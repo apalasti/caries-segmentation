@@ -37,7 +37,7 @@ seed = 42
 shuffle_train = true  # Set to false to use same batch every epoch (for testing)
 
 # Active loss terms: any of "bce", "focal", "dice" (not both bce and focal)
-losses = ["focal", "dice"]
+losses = ["focal", "bce"]
 
 # BCE (only if "bce" is in losses)
 # Per-class positive weights for BCEWithLogitsLoss; length must match model.n_classes.
