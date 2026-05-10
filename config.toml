@@ -48,7 +48,7 @@ bce_term_weight = 0.1  # Asymptotic scale on BCE after ramp (also when ramp is o
 # Focal Loss (only if "focal" is in losses)
 focal_gamma = 2.0
 # Per-channel class balance; length must match model.n_classes (scalar is normalized to one value).
-focal_alpha = 0.85
+focal_alpha = 0.95
 focal_term_weight = 1.0  # Scale of focal term vs other losses (same idea as bce_term_weight)
 focal_ramp_epochs = 0  # Linear ramp 0 → focal_term_weight over this many epochs; 0 = off
 
