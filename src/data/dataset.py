@@ -55,9 +55,10 @@ def _load_resized_arrays_keep_aspect_max_height(
 def _arrays_to_tensors(
     img_np: np.ndarray, mask_np: np.ndarray
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    img = (img_np - img_np.min()) / (img_np.max() - img_np.min() + 1e-8)
-    img_t = torch.from_numpy(np.ascontiguousarray(img)).float().unsqueeze(0)
-    mask_t = torch.from_numpy(np.ascontiguousarray(mask_np)).float().unsqueeze(0)
+    """Use global [0, 1] scale from loading/aug—no per-patch contrast stretch."""
+    img = np.clip(np.ascontiguousarray(img_np, dtype=np.float32), 0.0, 1.0)
+    img_t = torch.from_numpy(img).unsqueeze(0)
+    mask_t = torch.from_numpy(np.ascontiguousarray(mask_np, dtype=np.float32)).unsqueeze(0)
     return img_t, mask_t
 
 
