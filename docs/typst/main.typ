@@ -393,163 +393,61 @@ A scheduler epoch végén frissül, és a validációs Dice pontszám alapján k
 
 
 
-== YOLO-alapú objektumdetektáló modell működése
+== YOLOv8-alapú fogdetektáló modell működése és eredményei
 
-A *YOLO (You Only Look Once)* egy egyfázisú (single-stage) objektumdetektáló architektúra, amely egyetlen neurális hálózati előrecsatolás során végzi el mind az objektumok lokalizációját, mind azok osztályozását. A modell a bemeneti képet egy rácsra bontja, és minden rácspontban több előre definiált *anchor box* segítségével becsli meg az objektumok jelenlétét.
+A detekciós fázisban az Ultralytics YOLOv8 architektúrát alkalmaztuk a fogak lokalizálására. A modell feladata a releváns régiók (ROI) kijelölése, amelyeken később a szegmentációt végezzük.
 
-== Alapötlet
+=== 4-fold Keresztvalidációs Tanítás
 
-Legyen a bemenet egy $I in bb(R)^ "H x W x 3"$ kép.
-A hálózat egy $S times S$ felbontású rácson dolgozik, ahol minden rácscella $A$ darab anchor boxhoz rendel predikciókat.
+A modell robusztusságának biztosítása érdekében 4-fold keresztvalidációs (cross-validation) eljárást alkalmaztunk. A teljes adathalmazt 4 diszjunkt részre osztottuk, és minden foldon külön tanítottuk a modellt 100 epochon keresztül.
 
-ahol:
+A keresztvalidáció során elért eredmények (mAP50-95):
+- *Fold 1:* 0.630
+- *Fold 2:* 0.642
+- *Fold 3:* *0.6543 (Legjobb)*
+- *Fold 4:* 0.6507
 
-- $(x, y)$: doboz középpontja (offset a grid cellán belül)
-- $(w, h)$: szélesség és magasság
-- $p_"cls"$: objektum jelenlétének valószínűsége
-- $p_"cls"$: osztályvalószínűségek
+A **mAP50-95** (mean Average Precision) az objektumdetekció legfontosabb mérőszáma. Azt méri, hogy a modell mennyire találja meg az összes objektumot (Recall), és a jósolt dobozok mennyire pontosan fedik le azokat (Precision). Az "50-95" jelölés azt jelenti, hogy az átlagpontosságot több különböző IoU (Intersection over Union) küszöbértéken (0.5-től 0.95-ig, 0.05-ös lépésközzel) számoljuk ki, ami szigorúbb és pontosabb képet ad a modell lokalizációs képességéről.
 
-== Dekódolás
+A végleges kétfázisú modellbe a legjobb teljesítményt nyújtó, 3. foldból származó súlyokat integráltuk.
 
-A hálózat kimenete nem közvetlen koordinátákat ad, hanem transzformált értékeket:
+=== Veszteségfüggvények
 
-$
-x = (sigma(t_x) + c_x) * s_x
-$
+A YOLOv8 architektúra egy összetett veszteségfüggvényt használ, amely a következő komponensekből áll:
 
-$
-y = (sigma(t_y) + c_y) * s_y
-$
+1. *Box Loss ($L_"box"$):* A lokalizáció pontosságát méri a *CIoU (Complete Intersection over Union)* metrika segítségével, amely figyelembe veszi az átfedést, a középpontok távolságát és az oldalarányokat.
+2. *Classification Loss ($L_"cls"$):* Bináris keresztentrópiát (*BCE*) használ az objektumok (fogak) jelenlétének osztályozására.
+3. *Distribution Focal Loss ($L_"dfl"$):* Segíti a bounding box határainak finomhangolását elmosódott szélek esetén.
 
-$
-w = exp(t_w) * a_w
-$
+=== Caries lefedettség a prediktált régiókban
 
-$
-h = exp(t_h) * a_h
-$
+Meghatároztuk, hogy a detektor által jósolt bounding boxok mennyire fedik le a tényleges szuvasodásokat (ground truth). A globális metrikák alapján a teljes szuvas terület eloszlása:
+- *Caries terület a BBoxokon belül:* 96.86%
+- *Caries terület a BBoxokon kívül:* 3.14%
 
-ahol:
+Ez az eredmény igazolja a detekciós fázis hatékonyságát, mivel a szuvasodások elhanyagolható része marad ki a szegmentálásra kerülő patchekből.
 
-- $(c_x, c_y)$: grid cella koordinátái
-- $(a_w, a_h)$: anchor méretek
-- $(s_x, s_y)$: stride (képméret osztva rácsmérettel)
-- $sigma$: sigmoid függvény
+=== Tanítási görbék és példák
 
-== objektum kiválasztás
+#figure(
+  image("./figures/training/yolo_training_curves_cv.png", width: 80%),
+  caption: [A YOLOv8 4-fold keresztvalidáció tanítási görbéi (loss és mAP értékek).]
+)
 
-A végső pontszám:
+A vizuális kiértékelés során az alábbi ábrákon direkt olyan példákat mutatunk, ahol a szegmentáció nehézségekbe ütközött, és nem sikerült a caries területét teljes egészében a jósolt bounding boxon belül tartani. Ezek a határesetek rávilágítanak a detektor és a szegmentáló modell közötti interakció kritikus pontjaira.
 
-$
-"score" = p_"cls" * p_"cls"
-$
+#figure(
+  grid(
+    columns: 2,
+    gutter: 10pt,
+    [ #image("./figures/evaluation/yolo_bbox_predictions_on_caries_1.png", width: 100%) <sample0> ],
+    [ #image("./figures/evaluation/yolo_bbox_predictions_on_caries_2.png", width: 100%) <sample1> ]
+  ),
+  caption: [Példák a YOLOv8 bounding box predikcióira, ahol a szegmentáció részben kívül esett a dobozon.]
+)
 
-A kiválasztás lépései:
-
-1. Küszöbölés: $"score" > tau_"conf"$
-2. Nem-maximális elnyomás (NMS):
-
-$
-"IoU"(b_i, b_j) > tau_"iou" => "eldobás"
-$
-
-== Veszteségfüggvény
-
-A teljes veszteség:
-
-$
-L = lambda_"box" * L_"box" + L_"cls" + L_"cls"
-$
-
-ahol:
-
-- box loss (Smooth L1):
-
-$
-L_{"box"} = "SmoothL1"(t_"pred", t_"target")
-$
-
-- objectness loss:
-
-$
-L_"cls" = "BCE"(p_"cls", y_"cls")
-$
-
-- Class loss:
-
-$
-L_"cls" = "BCE"(p_"cls", y_"cls")
-$
-
-== Implementáció paraméterezése
-
-A bemutatott modell egy kompakt YOLO-szerű architektúra.
-
-=== Alap paraméterek
-
-- `num_classes`: osztályok száma ($C$)
-- `anchors`: anchor box méretek $(w, h)$
-- `conf_threshold`: detekciós küszöb ($tau_"conf"$)
-- `iou_threshold`: NMS küszöb ($tau_"iou"$)
-- `max_detections`: maximum detektált objektum
-
-=== Architektúra
-
-==== Backbone
-
-Konvolúciós blokkok:
-
-- Conv2D + BatchNorm + SiLU
-- Stride növelés → felbontás csökkentése
-
-==== Head
-
-$
-"output_channels" = A * (5 + C)
-$
-
-ahol:
-
-- $A$: anchorok száma
-- $(x, y, w, h, "obj")$ → 5 paraméter
-- $C$: osztályok száma
-
-=== Tensor dimenziók
-
-$
-(B, A * (5 + C), H, W) -> (B, A, H, W, 5 + C)
-$
-
-=== Target hozzárendelés
-
-1. Középpont → grid cella $(g_x, g_y)$
-2. IoU számítás anchorokkal
-3. Legjobb anchor kiválasztása
-4. Target értékek:
-
-$
-t_x = x / s_x - g_x
-$
-
-$
-t_y = y / s_y - g_y
-$
-
-$
-t_w = log(w / a_w)
-$
-
-$
-t_h = log(h / a_h)
-$
-
-=== Fontos implementációs részletek
-
-- Sigmoid aktiváció $(x, y)$ és confidence-re
-- Exponenciális skálázás $(w, h)$-re
-- Anchor-alapú regresszió
-- BCE loss többosztályos esetben
-- NMS redundancia csökkentésére
+=== Észrevétel:
+A modell **gyakran nem detektálja a fogsor szélén elhelyezkedő fogakat**.
 
 == Kezdetleges eredmények a kétfázisú illetve U-net baseline modllekre
 
@@ -670,7 +568,82 @@ A „YOLO és U-Net architektúra terv” fejezetben bemutatott modell kiérték
 
 A kiválasztás alapját elsősorban a Dice-együttható képezi, mint szegmentációs teljesítménymutató. A legjobb validációs eredményt elérő konfiguráció kerül kiválasztásra, amelyet ezt követően a teszt adathalmazon értékelünk. A kétfázisú architektúra elért eredményeit összevetjük egy U-net baseline modellel, a baseline modell beállításai, keresési tere megegyezik a kétfázisú modell U-net fejével, csak ebben az esetben mellőzzük a Yolo háló használatát.
 
+= Alkalmazásterv
 
+== Backend
+
+A backend egy FastAPI alapú REST API, amely panoráma fogászati röntgenképek feldolgozására szolgál. A rendszer egy `/predict` endpointot biztosít, amely több képet képes egyszerre fogadni multipart/form-data formában.
+
+A feldolgozási pipeline lépései:
+- a feltöltött képek beolvasása UploadFile objektumként
+- képek dekódolása PIL és NumPy segítségével RGB tömbbé
+- szegmentációs modell futtatása (model.predict)
+- mask és overlay generálása
+- eredmény PNG-be kódolása, majd base64 formában visszaküldése
+
+A backend CORS middleware-t használ, így a frontend közvetlenül tud kommunikálni vele localhost környezetben.
+
+== Model
+
+A rendszer egy U-Net alapú szegmentációs architektúrára épül, amely fogszuvasodási régiókat detektál panoráma röntgenképeken. A jelenlegi implementáció egy mock modell, amely ellipszis alakú régiókkal szimulálja a caries területeket, de a pipeline kompatibilis valódi deep learning modellekkel is.
+
+== Frontend (Streamlit UI)
+
+A frontend egy Streamlit alapú interaktív webalkalmazás, amely lehetővé teszi több röntgenkép feltöltését, kezelését és a szegmentációs eredmények vizualizálását.
+
+A rendszer session state alapú, így a feltöltött képek és predikciók a felhasználói munkamenetben megmaradnak.
+
+A frontend fő komponensei:
+- file uploader (több fájl drag & drop feltöltéssel)
+- "Run Segmentation" gomb a modell futtatásához
+- "Remove All Images" gomb az állapot törléséhez
+- képek kiválasztása és megjelenítése
+- eredmények vizualizálása (original + overlay)
+
+A frontend HTTP POST kéréssel kommunikál a backenddel, a képeket bináris formában küldi el, majd a válaszként kapott base64 encoded overlay képeket dekódolja és megjeleníti.
+
+== Funkciók
+
+=== Feltöltés (Drag & Drop)
+A felhasználó több panoráma röntgenképet tölthet fel egyszerre drag & drop segítségével. A Streamlit file uploader kezeli a fájlok beolvasását és session state-be mentését.
+
+=== Szegmentáció futtatása
+A "Run Segmentation" gomb megnyomásával a frontend HTTP POST kérést küld a backend /predict endpointjára. A backend visszaadja a szegmentációs eredményeket, amelyeket a frontend eltárol és megjelenít.
+
+#figure(
+  image("./figures/app/upload_download.PNG", width: 80%),
+  caption: [U-net architekrúrája.],
+)
+
+
+
+=== Eredmények megjelenítése
+A UI két panelen jeleníti meg az adatokat:
+- bal oldalon az eredeti röntgenkép
+- jobb oldalon a szegmentált overlay, amely kiemeli a detektált caries régiókat
+
+#figure(
+  image("./figures/app/result_view.PNG", width: 80%),
+  caption: [U-net architekrúrája.],
+)
+
+=== Képek kezelése (Manage)
+A felhasználó kiválaszthat egy képet egy listából, majd törölheti azt a session state-ből. A törlés frissíti a UI állapotát és a kapcsolódó predikciókat is.
+
+#figure(
+  image("./figures/app/manage_images.PNG", width: 80%),
+  caption: [U-net architekrúrája.],
+)
+
+=== Állapotkezelés
+A rendszer Streamlit session_state-et használ a feltöltött képek, predikciók és aktuális index tárolására, így biztosítva a konzisztens felhasználói élményt a UI újrarenderelése során.
+
+== Kommunikáció
+
+A frontend és backend HTTP alapú kommunikációt használ:
+- kérés: multipart/form-data (képek bináris formában)
+- válasz: JSON (filename, model, base64 overlay)
+- vizualizáció: base64 → PNG → PIL Image
 
   = SOTA MODELLEK
 
