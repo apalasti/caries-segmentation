@@ -1,7 +1,13 @@
 import random
+from pathlib import Path
 
+import torch
 import cv2
 import numpy as np
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+from src.models import UNet
 
 
 class MockSegmentationModel:
@@ -69,4 +75,34 @@ class MockSegmentationModel:
         return mask, overlay
 
 
-model = MockSegmentationModel()
+
+#model = MockSegmentationModel()
+path_to_model = Path(__file__).parent.parent / "solar-field-59.ckpt"
+ckpt = torch.load(path_to_model, map_location="cpu")
+
+hparams = ckpt["hyper_parameters"]
+
+model = UNet(
+    n_channels=hparams["model"]["n_channels"],
+    n_classes=hparams["model"]["n_classes"],
+    depth=hparams["model"]["depth"],
+    base_channels=hparams["model"]["base_channels"],
+    dropout=hparams["model"]["dropout"],
+)
+
+state_dict = ckpt["state_dict"]
+
+clean_state_dict = {}
+
+for k, v in state_dict.items():
+    if k.startswith("model."):
+        clean_state_dict[k.replace("model.", "")] = v
+
+missing, unexpected = model.load_state_dict(clean_state_dict, strict=False)
+
+print("Missing keys:", missing)
+print("Unexpected keys:", unexpected)
+
+model.eval()
+
+print("Weights loaded successfully.")

@@ -38,12 +38,12 @@ async def predict(files: list[UploadFile] = File(...)):
         print("PROCESSING:", file.filename)
         contents = await file.read()
 
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        image = Image.open(io.BytesIO(contents)).convert("L")
         image_np = np.array(image)
 
         mask, overlay = model.predict(image_np)
 
-        _, overlay_encoded = cv2.imencode(".png", cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+        _, overlay_encoded = cv2.imencode(".png", overlay)
         overlay_bytes = overlay_encoded.tobytes()
 
         import base64
