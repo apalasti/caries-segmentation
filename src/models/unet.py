@@ -138,4 +138,4 @@ class UNet(nn.Module):
 
         overlay = cv2.addWeighted(overlay, 1.0, color_mask, 0.4, 0)
 
-        return mask, overlay
+        return mask, None

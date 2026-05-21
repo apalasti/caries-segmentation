@@ -39,6 +39,16 @@ uploaded_files = st.file_uploader(
     key=f"uploader_{st.session_state.ui_version}"
 )
 
+mode = st.radio(
+    "Visualization mode",
+    ["soft", "binary"]
+)
+
+threshold = st.slider(
+    "Threshold (only for binary mode)",
+    0.0, 1.0, 0.5, 0.05
+)
+
 #if uploaded_files and not st.session_state.upload_lock:
 if uploaded_files:
 
@@ -86,7 +96,15 @@ if run_prediction:
         with st.spinner("Running segmentation..."):
 
             try:
-                response = requests.post(API_URL, files=files, timeout=60)
+                response = requests.post(
+                    API_URL,
+                    files=files,
+                    params={
+                        "mode": mode,
+                        "threshold": threshold
+                    },
+                    timeout=60
+                )
 
                 if response.status_code == 200:
                     st.session_state.predictions = response.json()["results"]

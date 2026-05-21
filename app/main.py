@@ -1,61 +1,58 @@
+from fastapi import FastAPI, File, UploadFile, Query
 import io
-
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from PIL import Image
+import base64
 
 from inference.model import model
 
 app = FastAPI()
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/")
-def root():
-    return {"message": "Dental Segmentation API Running"}
-
-
 @app.post("/predict")
-async def predict(files: list[UploadFile] = File(...)):
-
-    print("PREDICT CALLED")
+async def predict(
+    files: list[UploadFile] = File(...),
+    mode: str = Query("soft"),   # "soft" | "binary"
+    threshold: float = Query(0.5)
+):
 
     results = []
 
     for file in files:
 
-        print("PROCESSING:", file.filename)
         contents = await file.read()
 
         image = Image.open(io.BytesIO(contents)).convert("L")
         image_np = np.array(image)
 
-        mask, overlay = model.predict(image_np)
+        probs  = model.predict(image_np, return_prob=True)
 
-        _, overlay_encoded = cv2.imencode(".png", overlay)
-        overlay_bytes = overlay_encoded.tobytes()
+        base = cv2.cvtColor(image_np, cv2.COLOR_GRAY2BGR)
 
-        import base64
+        if mode == "binary":
 
-        overlay_b64 = base64.b64encode(overlay_bytes).decode("utf-8")
+            mask = (probs > threshold).astype(np.uint8)
 
-        results.append(
-            {
-                "filename": file.filename,
-                "model": model.name,
-                "overlay": overlay_b64,
-            }
-        )
+            color_mask = np.zeros_like(base)
+            color_mask[:, :, 2] = mask * 255  # red
 
-    return JSONResponse(content={"results": results})
+            final = cv2.addWeighted(base, 1.0, color_mask, 0.4, 0)
+
+        else:
+            heatmap = (probs * 255).astype(np.uint8)
+            heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+            final = cv2.addWeighted(base, 0.6, heatmap, 0.4, 0)
+
+        _, buffer = cv2.imencode(".png", final)
+        b64 = base64.b64encode(buffer).decode("utf-8")
+
+        results.append({
+            "filename": file.filename,
+            "overlay": b64,
+            "mode": mode,
+            "model":model.name
+        })
+
+    return {"results": results}

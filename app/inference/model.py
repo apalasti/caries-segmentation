@@ -103,7 +103,7 @@ model = UNet(
     base_channels=hparams["model"]["base_channels"],
     dropout=hparams["model"]["dropout"],
 )
-
+print("n_channels",hparams["model"]["n_channels"])
 state_dict = ckpt["state_dict"]
 
 clean_state_dict = {
