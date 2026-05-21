@@ -568,7 +568,7 @@ A „YOLO és U-Net architektúra terv” fejezetben bemutatott modell kiérték
 
 A kiválasztás alapját elsősorban a Dice-együttható képezi, mint szegmentációs teljesítménymutató. A legjobb validációs eredményt elérő konfiguráció kerül kiválasztásra, amelyet ezt követően a teszt adathalmazon értékelünk. A kétfázisú architektúra elért eredményeit összevetjük egy U-net baseline modellel, a baseline modell beállításai, keresési tere megegyezik a kétfázisú modell U-net fejével, csak ebben az esetben mellőzzük a Yolo háló használatát.
 
-= Alkalmazásterv
+= Alkalmazás
 
 == Backend
 
@@ -612,11 +612,8 @@ A "Run Segmentation" gomb megnyomásával a frontend HTTP POST kérést küld a 
 
 #figure(
   image("./figures/app/upload_download.PNG", width: 80%),
-  caption: [U-net architekrúrája.],
+  caption: [Képek feltöltése/letörlése funkció, illetve a szegmentáció futtatásához szükséges gomb],
 )
-
-
-
 === Eredmények megjelenítése
 A UI két panelen jeleníti meg az adatokat:
 - bal oldalon az eredeti röntgenkép
@@ -624,15 +621,20 @@ A UI két panelen jeleníti meg az adatokat:
 
 #figure(
   image("./figures/app/result_view.PNG", width: 80%),
-  caption: [U-net architekrúrája.],
+  caption: [Eredmények megjelenítése.],
 )
+
+
+
+
+
 
 === Képek kezelése (Manage)
 A felhasználó kiválaszthat egy képet egy listából, majd törölheti azt a session state-ből. A törlés frissíti a UI állapotát és a kapcsolódó predikciókat is.
 
 #figure(
   image("./figures/app/manage_images.PNG", width: 80%),
-  caption: [U-net architekrúrája.],
+  caption: [Kép kezelés menüpont bemutatás.],
 )
 
 === Állapotkezelés
@@ -644,6 +646,53 @@ A frontend és backend HTTP alapú kommunikációt használ:
 - kérés: multipart/form-data (képek bináris formában)
 - válasz: JSON (filename, model, base64 overlay)
 - vizualizáció: base64 → PNG → PIL Image
+=== Szegmentáció vizualizációs módok
+
+(Binary vs Soft Heatmap)
+
+A rendszer két különböző vizualizációs módot támogat a szegmentációs eredmények megjelenítésére, amelyek a felhasználói igények szerint választhatók.
+
+==== Binary (threshold-alapú szegmentáció)
+
+Ebben a módban a modell által generált valószínűségi térkép (probability map) egy előre megadott küszöbérték (threshold) alapján binarizálásra kerül.
+
+- a kimenet csak két értéket tartalmaz: 0 és 1
+- a 0 érték a háttér (nem caries)
+- az 1 érték a detektált caries régió
+- a vizualizáció piros színnel jelöli a pozitív pixeleket
+- a döntés determinisztikus, küszöb alapú
+
+Ez a mód diagnosztikai szempontból értelmezhetőbb, mivel egyértelmű határokat ad a detektált elváltozásokhoz.
+
+==== Soft Heatmap (valószínűségi alapú vizualizáció)
+
+Ebben a módban a modell kimenete nem kerül binarizálásra, hanem a teljes valószínűségi eloszlás vizuálisan kerül megjelenítésre.
+
+- a pixelértékek 0–1 közötti valószínűségek
+- ezek 0–255 skálára vannak normalizálva
+- a színezés colormap (pl. JET / VIRIDIS / INFERNO) segítségével történik
+- a magasabb valószínűség melegebb színeket (sárga, piros) kap
+- az alacsonyabb valószínűség hidegebb színeket (kék, zöld)
+
+A soft heatmap célja a modell bizonytalanságának és döntési gradienseknek a vizualizációja.
+
+#figure(
+  image("./figures/app/soft_heatmap.PNG", width: 80%),
+  caption: [heatmap funkció bemutatás.],
+)
+
+
+==== Overlay generálás
+
+Mindkét esetben a végső megjelenítés az eredeti röntgenkép és a szegmentációs eredmény kombinálásával történik.
+
+- binary mód esetén a maszk piros overlayként jelenik meg
+- soft mód esetén a heatmap félig áttetszően kerül rá az eredeti képre
+
+A keverés OpenCV `addWeighted` függvénnyel történik, amely biztosítja az anatómiai struktúrák és a predikciók egyidejű láthatóságát.
+
+A vizualizációs mód a felhasználó által dinamikusan választható, és minden kérés során a backend újragenerálja az overlay képet a kiválasztott módnak megfelelően.
+
 
   = SOTA MODELLEK
 
