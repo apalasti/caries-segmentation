@@ -25,8 +25,8 @@ if "predictions" not in st.session_state:
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 
-if "upload_lock" not in st.session_state:
-    st.session_state.upload_lock = False
+# if "upload_lock" not in st.session_state:
+#     st.session_state.upload_lock = False
 
 if "ui_version" not in st.session_state:
     st.session_state.ui_version = 0
@@ -39,7 +39,8 @@ uploaded_files = st.file_uploader(
     key=f"uploader_{st.session_state.ui_version}"
 )
 
-if uploaded_files and not st.session_state.upload_lock:
+#if uploaded_files and not st.session_state.upload_lock:
+if uploaded_files:
 
     existing_names = {
         f["name"] for f in st.session_state.uploaded_images

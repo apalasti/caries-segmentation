@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 from src.models import UNet
-
+import gdown
 
 class MockSegmentationModel:
 
@@ -77,8 +77,22 @@ class MockSegmentationModel:
 
 
 #model = MockSegmentationModel()
-path_to_model = Path(__file__).parent.parent / "solar-field-59.ckpt"
-ckpt = torch.load(path_to_model, map_location="cpu")
+FILE_ID = "1HJL3H8buXZJQGewJ-frNZouG_eAn9rzl"
+
+BASE_DIR = Path(__file__).parent.parent
+MODEL_PATH = BASE_DIR / "checkpoints" / "solar-field-59.ckpt"
+
+MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+if not MODEL_PATH.exists():
+    print("Downloading model from Google Drive...")
+    gdown.download(
+        id=FILE_ID,
+        output=str(MODEL_PATH),
+        quiet=False,
+    )
+
+ckpt = torch.load(MODEL_PATH, map_location="cpu", weights_only=False)
 
 hparams = ckpt["hyper_parameters"]
 
@@ -92,11 +106,11 @@ model = UNet(
 
 state_dict = ckpt["state_dict"]
 
-clean_state_dict = {}
-
-for k, v in state_dict.items():
-    if k.startswith("model."):
-        clean_state_dict[k.replace("model.", "")] = v
+clean_state_dict = {
+    k.replace("model.", ""): v
+    for k, v in state_dict.items()
+    if k.startswith("model.")
+}
 
 missing, unexpected = model.load_state_dict(clean_state_dict, strict=False)
 
