@@ -720,6 +720,33 @@ A W&B integrációjával a Python kódba (a `wandb` könyvtáron keresztül) a f
 
 = Eredmények
 
+Az alábbiakban bemutatjuk az egykomponensű (single-shot) U-Net szegmentációs modell eredményeit. A modellt három keresztvalidációs splitre (CV Fold 0, 1, 2) tanítottuk, illetve egy végső modellt a már a kezdetekben meghatározott tanító, validációs és teszt felosztással. 
+
+== Teszt metrikák összehasonlítása
+
+A @fig-test-metrics ábrán a teszt halmazon mért teljesítmény-metrikákat hasonlítjuk össze a négy modell között. A kiértékelés öt metrikát tartalmaz: Lesion F1, Lesion Recall, Lesion Precision, IoU és Dice.
+
+#figure(
+  image("./figures/test_metrics_comparison.png", width: 85%),
+  caption: [Teszt teljesítmény összehasonlítása a keresztvalidációs foldok és a teljes adathalmazon tanított modell között.],
+) <fig-test-metrics>
+
+A keresztvalidációs foldok között az eredmények konzisztensek: a Lesion F1 értékek 0.396–0.405, az IoU 0.288–0.299, a Dice pedig 0.446–0.456 tartományban mozognak. A Precision mindhárom fold esetében viszonylag magas (0.573–0.606), míg a Recall alacsonyabb (0.330–0.362), ami arra utal, hogy a modell inkább konzervatív: kevesebb régiót jelöl szuvasnak, de amit jelöl, az nagyobb valószínűséggel valóban lézió.
+
+A teljes adathalmazon tanított modell minden metrikában enyhe javulást mutat a keresztvalidációs átlaghoz képest: Lesion F1 = 0.418, Recall = 0.368, IoU = 0.303, Dice = 0.464. Ez a javulás a nagyobb tanító adatmennyiségnek tulajdonítható. A Precision értéke (0.572) kissé alacsonyabb a CV foldokénál, ami a magasabb Recall-lal együtt egy kiegyensúlyozottabb trade-off-ra utal.
+
+== Tanulási görbék
+
+A @fig-loss-curves ábrán a tanító és validációs veszteségfüggvény görbéit mutatjuk be a tanítás során.
+
+#figure(
+  image("./figures/loss_curves.png", width: 95%),
+  caption: [Tanító (balra) és validációs (jobbra) veszteségfüggvény görbék a keresztvalidációs foldok és a teljes adathalmazon tanított modell esetében.],
+) <fig-loss-curves>
+
+Mindkét ábra esetében a veszteségértékek monoton csökkenő tendenciát mutatnak, és a görbék hasonló lefutást követnek a négy modell esetében. A tanító veszteség kezdetben gyorsan csökken, majd fokozatosan stabilizálódik. A validációs veszteség hasonló mintázatot mutat, viszont magasabb veszteség értékeken stabilizálódik amely tultanulásra adhat feltételezést.
+
+A teljes adathalmazon tanított modell görbéje (Full Dataset) hosszabb tanítási időtartamot tükröz (több global step), ami a nagyobb adatmennyiségből adódik. A végső veszteségértékek összhangban vannak a keresztvalidációs foldok eredményeivel.
 
 = Konklúzió
 
