@@ -9,8 +9,9 @@
   title: [Fogszuvasodás Szegmentáció és Detekció],
   short-title: [Orvosi kép szegmentáció],
   authors: (
-    (name: "name"),
-    (name: "name")
+    (name: "Palásti András (IDNGIS)"),
+    (name: "Oláh Bendegúz István (A5VHUA)"),
+    (name: "Rózsa Botond (AS76HW)")
   ),
   abstract: [
     Orvosi fogszuvasodás-szegmentáció és detekció panorámaröntgen-adatokon.
@@ -750,4 +751,15 @@ A teljes adathalmazon tanított modell görbéje (Full Dataset) hosszabb tanít�
 
 = Konklúzió
 
+A jelen munka egy kétfázisú, mélytanulás-alapú rendszert mutatott be fogszuvasodás detekciójára és szegmentációjára panoráma röntgenfelvételeken. A megközelítés lényege egy YOLO-alapú detektáló komponens és egy U-Net-alapú szegmentációs modell kombinációja volt, amelyeket egy konjunkciós pipeline-ban kapcsoltunk össze annak érdekében, hogy a lokalizáció és a pixelszintű pontosság egyszerre legyen biztosítható.
+
+A detekciós komponens (YOLOv8) keresztvalidációs vizsgálata stabil teljesítményt mutatott, a mAP50–95 értékek 0.63 és 0.65 közötti tartományban alakultak.
+
+A szegmentációs feladat esetében a baseline U-Net és a kétfázisú YOLO+U-Net rendszer összehasonlítása rámutatott arra, hogy a kétlépcsős architektúra stabilabb és kiegyensúlyozottabb teljesítményt nyújt bizonyos metrikák mentén. A teljes adathalmazon tanított modell esetében a Lesion Dice érték ~0.46, az IoU ~0.30, míg a F1-score ~0.41 körül alakult. A precision értékek minden esetben magasabbak voltak, mint a recall, ami arra utal, hogy a modell konzervatív döntéshozatalt alkalmaz: kevesebb fals pozitívot produkál, ugyanakkor bizonyos léziók kimaradása továbbra is problémát jelent.
+
+A vizsgálatok alapján a kétfázisú architektúra legnagyobb előnye a lokalizációs hibák csökkentése és a tanulási feladat dekompozíciója. A YOLO komponens biztosítja a releváns régiók kiválasztását, míg az U-Net ezekben a régiókban finom, pixelekre bontott predikciót végez. Ez a felosztás különösen hasznos komplex, zajos panoráma röntgenképek esetén, ahol a teljes képen történő szegmentáció nehézségekbe ütközik.
+
+Ugyanakkor a rendszer korlátai is azonosíthatók. A recall értékek alacsonyabb szintje arra utal, hogy bizonyos szuvasodási esetek – különösen a fogsor szélén vagy gyengén kontrasztos régiókban – nem kerülnek megfelelően detektálásra. További kihívást jelent a kis méretű vagy korai stádiumú léziók felismerése, amelyek gyakran a felbontás határán helyezkednek el.
+
+Összességében a bemutatott rendszer egy továbbfejleszthető megoldást kínál fogszuvasodás automatikus felismerésére.
 #bibliography("ref.bib", style: "ieee", title: auto)
