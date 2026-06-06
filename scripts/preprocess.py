@@ -1,10 +1,8 @@
 import hashlib
-import os
 import pathlib
 import shutil
-from collections import defaultdict
 from itertools import chain
-
+from pathlib import Path
 import pandas as pd
 from PIL import Image, ImageDraw
 from tqdm import tqdm
@@ -15,13 +13,36 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 PREPROCESSED_DIR = DATA_DIR / "preprocessed"
 
 
-def get_dc1000_mask_path(image_path: pathlib.Path) -> pathlib.Path:
-    return pathlib.Path(
-        str(image_path)
-            .replace("org_test_dataset/images", "org_test_dataset/colors")
-            .replace("org_train_dataset/images", "org_train_dataset/colors_clean")
-    )
+def get_dc1000_mask_path(image_path: Path) -> Path:
+    """
+    Returns the corresponding DC1000 mask path for a given image path.
+    Works for both Windows and Unix paths.
+    """
 
+    # Convert to absolute Path to be safe
+    image_path = image_path.resolve()
+
+    parts = image_path.parts  # tuple of path components
+
+    # Determine new subfolder for masks
+    if "org_train_dataset" in parts:
+        # Replace 'images' with 'colors_clean' in train dataset
+        new_parts = list(parts)
+        images_idx = new_parts.index("images")
+        new_parts[images_idx] = "colors_clean"
+        mask_path = Path(*new_parts)
+
+    elif "org_test_dataset" in parts:
+        # Replace 'images' with 'colors' in test dataset
+        new_parts = list(parts)
+        images_idx = new_parts.index("images")
+        new_parts[images_idx] = "colors"
+        mask_path = Path(*new_parts)
+
+    else:
+        raise ValueError(f"Unrecognized dataset path: {image_path}")
+
+    return mask_path
 
 def get_roboflow_label_path(image_path: pathlib.Path) -> pathlib.Path:
     if image_path.parent.name != "images":
@@ -108,48 +129,10 @@ def handle_roboflow(row) -> bool:
     except Exception:
         return True
 
-def keep_one_in_roboflow_train():
-    roboflow_dir = pathlib.Path(RAW_DATA_DIR / "vzrad2-6/train")
-    image_dir = roboflow_dir / "images"
-    label_dir = roboflow_dir / "labels"
-
-    groups = defaultdict(list)
-
-    for f in os.listdir(image_dir):
-        if ".rf." in f:
-            base = f.split(".rf.")[0]
-            groups[base].append(f)
-
-    deleted = 0
-
-    for base, files in groups.items():
-        files = sorted(files)
-        keep = files[0]
-
-        for f in files[1:]:  # minden más törlése
-            img_path = os.path.join(image_dir, f)
-            lbl_path = os.path.join(label_dir, os.path.splitext(f)[0] + ".txt")
-
-            if os.path.exists(img_path):
-                os.remove(img_path)
-
-            if os.path.exists(lbl_path):
-                os.remove(lbl_path)
-
-            deleted += 1
-
-    print("Groups:", len(groups))
-    print("Deleted images:", deleted)
-    print("Remaining images:", len(os.listdir(image_dir)))
-
 
 def main():
-    # TODO: place augmented images into the same place, throw out augmented images
-
     shutil.rmtree(PREPROCESSED_DIR, ignore_errors=True)
-    PREPROCESSED_DIR.mkdir(exist_ok=True)
-
-    keep_one_in_roboflow_train()
+    PREPROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
     df = pd.DataFrame(
         {
@@ -171,6 +154,31 @@ def main():
     df["original_type"] = df["original"].apply(
         lambda fp: next((t for t in ["train", "valid", "test"] if t in fp), "unknown")
     )
+
+    n_before_dedup: int = (df["source"] == "roboflow").sum()
+    
+    def get_base_name(p: str) -> str:
+        name = pathlib.Path(p).name
+        if ".rf." in name:
+            name = name.split(".rf.")[0]
+        if "_aug" in name:
+            name = name.split("_aug")[0]
+        return name
+
+    df["is_aug"] = df["original"].apply(lambda p: "_aug" in pathlib.Path(p).name)
+    df["_dedup_key"] = df["original"].apply(get_base_name)
+    
+    df = (
+        df.sort_values(["is_aug", "original"], kind="mergesort")
+        .drop_duplicates(subset="_dedup_key", keep="first")
+        .drop(columns=["_dedup_key", "is_aug"])
+    )
+    
+    n_after_dedup: int = (df["source"] == "roboflow").sum()
+    print(
+        f"Roboflow .rf.* dedup: dropped {n_before_dedup - n_after_dedup} duplicate row(s) out of {n_before_dedup}"
+    )
+
     df["id"] = df["original"].apply(lambda fp: hashlib.md5(fp.encode()).hexdigest())
 
     def deterministic_split(id_str: str, train: float = 0.7, val: float = 0.15) -> str:
